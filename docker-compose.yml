@@ -1,0 +1,219 @@
+# StarRocks MySQL CDC Demo
+# BE 모드: docker compose --profile be up -d
+# CN 모드: docker compose --profile cn up -d
+
+services:
+  # ===========================================
+  # MySQL (공통 서비스)
+  # ===========================================
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    profiles: ["be", "cn"]
+    environment:
+      MYSQL_ROOT_PASSWORD: "StarRocksDemo1!"
+      MYSQL_DATABASE: demo_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./config/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      - ./scripts/mysql-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - mysql_data:/var/lib/mysql
+    networks:
+      - starrocks-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pStarRocksDemo1!"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ===========================================
+  # StarRocks Frontend - BE 모드 (Shared-Nothing)
+  # ===========================================
+  starrocks-fe-be:
+    image: starrocks/fe-ubuntu:3.5-latest
+    hostname: starrocks-fe
+    container_name: starrocks-fe
+    profiles: ["be"]
+    user: root
+    command:
+      - /bin/bash
+      - -c
+      - |
+        /opt/starrocks/fe/bin/start_fe.sh --host_type FQDN
+    ports:
+      - "8030:8030"
+      - "9020:9020"
+      - "9030:9030"
+    volumes:
+      - fe_meta:/opt/starrocks/fe/meta
+      - fe_log:/opt/starrocks/fe/log
+    networks:
+      - starrocks-net
+    healthcheck:
+      test: 'mysql -u root -h starrocks-fe -P 9030 -e "show frontends\G" |grep "Alive: true"'
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  # ===========================================
+  # StarRocks Backend (BE 모드 전용)
+  # ===========================================
+  starrocks-be:
+    image: starrocks/be-ubuntu:3.5-latest
+    hostname: starrocks-be
+    container_name: starrocks-be
+    profiles: ["be"]
+    user: root
+    depends_on:
+      starrocks-fe-be:
+        condition: service_healthy
+    ports:
+      - "8040:8040"
+      - "9050:9050"
+      - "9060:9060"
+    volumes:
+      - be_storage:/opt/starrocks/be/storage
+      - be_log:/opt/starrocks/be/log
+    networks:
+      - starrocks-net
+    command:
+      - /bin/bash
+      - -c
+      - |
+        sleep 15
+        mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -e "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';" || true
+        /opt/starrocks/be/bin/start_be.sh
+    restart: unless-stopped
+    healthcheck:
+      test: 'mysql -u root -h starrocks-fe -P 9030 -e "SHOW BACKENDS\G" |grep "Alive: true"'
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ===========================================
+  # MinIO (CN 모드 전용 - S3 호환 스토리지)
+  # ===========================================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    profiles: ["cn"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: StarRocksDemo1!_minio
+    entrypoint: sh
+    command: '-c "mkdir -p /data/starrocks-bucket && minio server /data --console-address :9001"'
+    networks:
+      - starrocks-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===========================================
+  # StarRocks Frontend - CN 모드 (Shared-Data)
+  # ===========================================
+  starrocks-fe-cn:
+    image: starrocks/fe-ubuntu:3.5-latest
+    hostname: starrocks-fe
+    container_name: starrocks-fe
+    profiles: ["cn"]
+    user: root
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "# Shared-Data Mode Configuration" >> /opt/starrocks/fe/conf/fe.conf
+        echo "run_mode = shared_data" >> /opt/starrocks/fe/conf/fe.conf
+        echo "cloud_native_storage_type = S3" >> /opt/starrocks/fe/conf/fe.conf
+        echo "aws_s3_endpoint = minio:9000" >> /opt/starrocks/fe/conf/fe.conf
+        echo "aws_s3_path = starrocks-bucket/docker/db" >> /opt/starrocks/fe/conf/fe.conf
+        echo "aws_s3_access_key = admin" >> /opt/starrocks/fe/conf/fe.conf
+        echo "aws_s3_secret_key = StarRocksDemo1!_minio" >> /opt/starrocks/fe/conf/fe.conf
+        echo "aws_s3_use_instance_profile = false" >> /opt/starrocks/fe/conf/fe.conf
+        echo "aws_s3_use_aws_sdk_default_behavior = false" >> /opt/starrocks/fe/conf/fe.conf
+        echo "aws_s3_use_path_style = true" >> /opt/starrocks/fe/conf/fe.conf
+        echo "enable_load_volume_from_conf = true" >> /opt/starrocks/fe/conf/fe.conf
+        /opt/starrocks/fe/bin/start_fe.sh --host_type FQDN
+    ports:
+      - "8030:8030"
+      - "9020:9020"
+      - "9030:9030"
+    volumes:
+      - fe_meta_cn:/opt/starrocks/fe/meta
+      - fe_log_cn:/opt/starrocks/fe/log
+    networks:
+      - starrocks-net
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: 'mysql -u root -h starrocks-fe -P 9030 -e "show frontends\G" |grep "Alive: true"'
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  # ===========================================
+  # StarRocks Compute Node (CN 모드 전용)
+  # ===========================================
+  starrocks-cn:
+    image: starrocks/cn-ubuntu:3.5-latest
+    hostname: starrocks-cn
+    container_name: starrocks-cn
+    profiles: ["cn"]
+    user: root
+    depends_on:
+      starrocks-fe-cn:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "8040:8040"
+      - "9050:9050"
+      - "9060:9060"
+    volumes:
+      - cn_log:/opt/starrocks/cn/log
+    networks:
+      - starrocks-net
+    environment:
+      - HOST_TYPE=FQDN
+    command:
+      - /bin/bash
+      - -c
+      - |
+        sleep 15
+        ulimit -u 65535
+        ulimit -n 65535
+        mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';" || true
+        /opt/starrocks/cn/bin/start_cn.sh
+    restart: unless-stopped
+    healthcheck:
+      test: 'mysql -u root -h starrocks-fe -P 9030 -e "SHOW COMPUTE NODES\G" |grep "Alive: true"'
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  starrocks-net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  fe_meta:
+  fe_log:
+  fe_meta_cn:
+  fe_log_cn:
+  be_storage:
+  be_log:
+  cn_log:
+  minio_data:
