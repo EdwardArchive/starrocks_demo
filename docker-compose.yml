@@ -16,9 +16,15 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - ./config/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
-      - ./scripts/mysql-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - mysql_data:/var/lib/mysql
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     networks:
       - starrocks-net
     healthcheck:
@@ -27,6 +33,34 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  # ===========================================
+  # MySQL Init (테이블이 없으면 자동 생성)
+  # ===========================================
+  mysql-init:
+    image: mysql:8.0
+    container_name: mysql-init
+    profiles: ["be", "cn"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/scripts:ro
+    networks:
+      - starrocks-net
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Checking if products table exists..."
+        if ! mysql -h mysql -u root -pStarRocksDemo1! -e "SELECT 1 FROM demo_db.products LIMIT 1" 2>/dev/null; then
+          echo "Products table not found. Running init script..."
+          cat /scripts/mysql-init.sql | mysql -h mysql -u root -pStarRocksDemo1!
+          echo "Init script completed."
+        else
+          echo "Products table already exists. Skipping init."
+        fi
+    restart: "no"
 
   # ===========================================
   # StarRocks Frontend - BE 모드 (Shared-Nothing)
