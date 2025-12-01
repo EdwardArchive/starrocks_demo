@@ -55,7 +55,7 @@ services:
         echo "Checking if products table exists..."
         if ! mysql -h mysql -u root -pStarRocksDemo1! -e "SELECT 1 FROM demo_db.products LIMIT 1" 2>/dev/null; then
           echo "Products table not found. Running init script..."
-          cat /scripts/mysql-init.sql | mysql -h mysql -u root -pStarRocksDemo1!
+          mysql -h mysql -u root -pStarRocksDemo1! --default-character-set=utf8mb4 < /scripts/mysql-init.sql
           echo "Init script completed."
         else
           echo "Products table already exists. Skipping init."

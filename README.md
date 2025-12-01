@@ -114,10 +114,10 @@ docker logs -f starrocks-fe
 
 | 서비스 | 포트 | 접속 방법 |
 | --- | --- | --- |
-| MySQL | 3306 | `mysql -h localhost -P 3306 -u root -p'StarRocksDemo1!'` |
-| StarRocks (MySQL Protocol) | 9030 | `mysql -h localhost -P 9030 -u root` |
-| StarRocks Web UI | 8030 | [http://localhost:8030](http://localhost:8030/) |
-| MinIO Console (CN모드) | 9001 | [http://localhost:9001](http://localhost:9001/) (admin / StarRocksDemo1!_minio) |
+| MySQL | 3306 | `mysql -h 127.0.0.1 -P 3306 -u root -p'StarRocksDemo1!'` |
+| StarRocks (MySQL Protocol) | 9030 | `mysql -h 127.0.0.1 -P 9030 -u root` |
+| StarRocks Web UI | 8030 | [http://127.0.0.1:8030](http://127.0.0.1:8030/) |
+| MinIO Console (CN모드) | 9001 | [http://127.0.0.1:9001](http://127.0.0.1:9001/) (admin / StarRocksDemo1!_minio) |
 
 ---
 
@@ -132,7 +132,7 @@ MySQL이 초기화되면 자동으로 샘플 데이터가 생성됩니다.
 
 ```bash
 # MySQL 접속
-mysql -h localhost -P 3306 -u root -p'StarRocksDemo1!'
+mysql -h 127.0.0.1 -P 3306 -u root -p'StarRocksDemo1!'
 ```
 
 ```sql
@@ -157,7 +157,7 @@ StarRocks에서 MySQL 카탈로그를 생성합니다.
 
 ```bash
 # StarRocks 접속
-mysql -h localhost -P 9030 -u root
+mysql -h 127.0.0.1 -P 9030 -u root
 ```
 
 ```sql
@@ -247,7 +247,7 @@ MySQL에서 데이터를 변경하고 StarRocks에서 확인합니다.
 
 ```sql
 -- MySQL 접속
-mysql -h localhost -P 3306 -u root -p'StarRocksDemo1!' demo_db
+mysql -h 127.0.0.1 -P 3306 -u root -p'StarRocksDemo1!' demo_db
 
 -- 가격 업데이트
 UPDATE products SET price = price * 1.1 WHERE product_id = 1;
@@ -265,29 +265,16 @@ SELECT * FROM products WHERE product_id IN (1, (SELECT MAX(product_id) FROM prod
 
 ```sql
 -- StarRocks 접속
-mysql -h localhost -P 9030 -u root
+mysql -h 127.0.0.1 -P 9030 -u root
 
--- MySQL 데이터 직접 조회 (실시간)
-SELECT * FROM mysql_catalog.demo_db.products
-WHERE product_id IN (1, (SELECT MAX(product_id) FROM mysql_catalog.demo_db.products));
-
-```
-
-**수동 동기화 실행:**
-
-```sql
--- 수동으로 동기화 실행
-INSERT INTO analytics_db.products_sync
-    (product_id, product_name, category, price, stock_quantity, last_updated, sync_time)
-SELECT
-    product_id, product_name, category, price, stock_quantity, last_updated, NOW()
-FROM mysql_catalog.demo_db.products
-WHERE last_updated >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE);
+-- MySQL(External Catalog) 데이터 직접 조회 (실시간)
+SELECT * FROM mysql_catalog.demo_db.products WHERE product_id = 1
+  UNION ALL
+  SELECT * FROM mysql_catalog.demo_db.products WHERE product_id = (SELECT MAX(product_id) FROM mysql_catalog.demo_db.products)
 
 -- 동기화 결과 확인
 SELECT * FROM analytics_db.products_sync
 WHERE product_id IN (1, (SELECT MAX(product_id) FROM analytics_db.products_sync));
-
 ```
 
 ---
@@ -394,14 +381,14 @@ docker exec starrocks-fe ls -la /opt/starrocks/fe/meta
 
 ```bash
 # StarRocks에서 BE/CN 상태 확인
-mysql -h localhost -P 9030 -u root -e "SHOW BACKENDS;"
-mysql -h localhost -P 9030 -u root -e "SHOW COMPUTE NODES;"
+mysql -h 127.0.0.1 -P 9030 -u root -e "SHOW BACKENDS;"
+mysql -h 127.0.0.1 -P 9030 -u root -e "SHOW COMPUTE NODES;"
 
 # 수동으로 BE 등록
-mysql -h localhost -P 9030 -u root -e "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';"
+mysql -h 127.0.0.1 -P 9030 -u root -e "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';"
 
 # 수동으로 CN 등록
-mysql -h localhost -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';"
+mysql -h 127.0.0.1 -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';"
 
 ```
 
@@ -440,7 +427,7 @@ docker logs minio
 docker exec minio-init mc ls myminio/
 
 # MinIO 헬스체크
-curl http://localhost:9000/minio/health/live
+curl http://127.0.0.1:9000/minio/health/live
 ```
 
 ### **일반적인 디버깅 명령어**
