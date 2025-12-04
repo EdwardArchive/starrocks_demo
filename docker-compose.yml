@@ -243,9 +243,12 @@ services:
 
   # ===========================================
   # Flink CDC (flink 프로필)
+  # JAR 파일이 이미지에 포함됨 (Dockerfile에서 다운로드)
   # ===========================================
   flink-jobmanager:
-    image: flink:1.20-java11
+    build:
+      context: ./config/flink
+      dockerfile: Dockerfile
     hostname: flink-jobmanager
     container_name: flink-jobmanager
     profiles: ["flink"]
@@ -263,7 +266,6 @@ services:
         state.checkpoints.dir: file:///opt/flink/checkpoints
     volumes:
       - flink_checkpoints:/opt/flink/checkpoints
-      - ./config/flink/lib:/opt/flink/lib/custom:ro
       - ./scripts/flink:/opt/flink/jobs:ro
     networks:
       - starrocks-net
@@ -280,7 +282,9 @@ services:
     restart: unless-stopped
 
   flink-taskmanager:
-    image: flink:1.20-java11
+    build:
+      context: ./config/flink
+      dockerfile: Dockerfile
     hostname: flink-taskmanager
     container_name: flink-taskmanager
     profiles: ["flink"]
@@ -293,7 +297,6 @@ services:
         taskmanager.memory.process.size: 2g
     volumes:
       - flink_checkpoints:/opt/flink/checkpoints
-      - ./config/flink/lib:/opt/flink/lib/custom:ro
     networks:
       - starrocks-net
     depends_on:
@@ -302,7 +305,9 @@ services:
     restart: unless-stopped
 
   flink-sql-client:
-    image: flink:1.20-java11
+    build:
+      context: ./config/flink
+      dockerfile: Dockerfile
     container_name: flink-sql-client
     profiles: ["flink"]
     depends_on:
@@ -311,7 +316,6 @@ services:
       starrocks-be:
         condition: service_healthy
     volumes:
-      - ./config/flink/lib:/opt/flink/lib/custom:ro
       - ./scripts/flink:/opt/flink/jobs:ro
     networks:
       - starrocks-net

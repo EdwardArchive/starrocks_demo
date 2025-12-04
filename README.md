@@ -546,7 +546,7 @@ open http://localhost:8081
 docker exec -it flink-sql-client ./bin/sql-client.sh
 ```
 
-**필수 사전 작업**: `config/flink/lib/README.md`를 참고하여 필요한 JAR 파일을 다운로드하세요.
+**참고**: JAR 파일은 Docker 이미지 빌드 시 자동으로 다운로드됩니다. 첫 실행 시 빌드에 시간이 소요될 수 있습니다.
 
 **서비스 접속 정보:**
 | 서비스 | 포트 | 용도 |

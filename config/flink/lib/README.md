@@ -1,53 +1,33 @@
 # Flink CDC Connector JARs
 
-이 디렉토리에 Flink CDC 및 StarRocks 커넥터 JAR 파일을 다운로드하세요.
+## 자동 포함
 
-## 필요한 JAR 파일
+Flink CDC 및 StarRocks 커넥터 JAR 파일은 **Docker 이미지 빌드 시 자동으로 다운로드**됩니다.
 
-### 1. Flink CDC Connector (MySQL)
+`config/flink/Dockerfile`에서 다음 JAR 파일들을 다운로드합니다:
+- `flink-sql-connector-mysql-cdc-3.2.1.jar`
+- `flink-connector-starrocks-1.2.10_flink-1.20.jar`
+- `mysql-connector-java-8.0.28.jar`
+
+## 사용 방법
+
+별도의 JAR 다운로드 없이 바로 실행 가능합니다:
+
 ```bash
-# Flink SQL Connector MySQL CDC 3.2.1
-curl -O https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-mysql-cdc/3.2.1/flink-sql-connector-mysql-cdc-3.2.1.jar
+docker compose --profile be --profile flink up -d
 ```
 
-### 2. StarRocks Connector for Flink
-```bash
-# StarRocks Connector for Flink 1.20
-curl -O https://repo1.maven.org/maven2/com/starrocks/flink-connector-starrocks/1.2.10_flink-1.20/flink-connector-starrocks-1.2.10_flink-1.20.jar
-```
+첫 실행 시 이미지 빌드에 시간이 소요될 수 있습니다.
 
-### 3. MySQL JDBC Driver
-```bash
-# MySQL Connector Java 8.0.28
-curl -O https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar
-```
+## 수동 다운로드 (선택사항)
 
-## 자동 다운로드 스크립트
+로컬에서 JAR 파일을 확인하거나 테스트하려면:
 
-Linux/Mac:
 ```bash
-cd config/flink/lib
+# Linux/Mac
 curl -O https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-mysql-cdc/3.2.1/flink-sql-connector-mysql-cdc-3.2.1.jar
 curl -O https://repo1.maven.org/maven2/com/starrocks/flink-connector-starrocks/1.2.10_flink-1.20/flink-connector-starrocks-1.2.10_flink-1.20.jar
 curl -O https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar
-```
-
-Windows (PowerShell):
-```powershell
-cd config\flink\lib
-Invoke-WebRequest -Uri "https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-mysql-cdc/3.2.1/flink-sql-connector-mysql-cdc-3.2.1.jar" -OutFile "flink-sql-connector-mysql-cdc-3.2.1.jar"
-Invoke-WebRequest -Uri "https://repo1.maven.org/maven2/com/starrocks/flink-connector-starrocks/1.2.10_flink-1.20/flink-connector-starrocks-1.2.10_flink-1.20.jar" -OutFile "flink-connector-starrocks-1.2.10_flink-1.20.jar"
-Invoke-WebRequest -Uri "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar" -OutFile "mysql-connector-java-8.0.28.jar"
-```
-
-## 다운로드 후 디렉토리 구조
-
-```
-config/flink/lib/
-├── README.md (이 파일)
-├── flink-sql-connector-mysql-cdc-3.2.1.jar
-├── flink-connector-starrocks-1.2.10_flink-1.20.jar
-└── mysql-connector-java-8.0.28.jar
 ```
 
 ## 참고 링크
