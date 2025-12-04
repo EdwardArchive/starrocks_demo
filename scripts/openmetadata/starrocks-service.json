@@ -1,0 +1,18 @@
+{
+  "name": "starrocks_analytics",
+  "displayName": "StarRocks Analytics Database",
+  "serviceType": "Mysql",
+  "description": "StarRocks analytics database (MySQL protocol compatible)",
+  "connection": {
+    "config": {
+      "type": "Mysql",
+      "scheme": "mysql+pymysql",
+      "username": "root",
+      "authType": {
+        "password": ""
+      },
+      "hostPort": "starrocks-fe:9030",
+      "databaseName": "analytics_db"
+    }
+  }
+}

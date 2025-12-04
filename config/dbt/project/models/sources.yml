@@ -1,0 +1,26 @@
+version: 2
+
+sources:
+  - name: mysql_source
+    description: "MySQL source database via StarRocks External Catalog"
+    database: "{{ var('mysql_catalog') }}"
+    schema: "{{ var('source_database') }}"
+    tables:
+      - name: products
+        description: "Products table from MySQL"
+        columns:
+          - name: product_id
+            description: "Primary key"
+            tests:
+              - unique
+              - not_null
+          - name: product_name
+            description: "Product name"
+          - name: category
+            description: "Product category"
+          - name: price
+            description: "Product price"
+          - name: stock_quantity
+            description: "Stock quantity"
+          - name: last_updated
+            description: "Last update timestamp"

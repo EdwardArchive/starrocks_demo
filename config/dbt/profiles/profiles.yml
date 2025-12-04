@@ -1,0 +1,12 @@
+starrocks_demo:
+  target: dev
+  outputs:
+    dev:
+      type: starrocks
+      host: starrocks-fe
+      port: 9030
+      catalog: default_catalog
+      schema: dbt_analytics
+      username: root
+      password: ""
+      threads: 4

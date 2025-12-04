@@ -1,6 +1,10 @@
 # StarRocks MySQL CDC Demo
 # BE 모드: docker compose --profile be up -d
 # CN 모드: docker compose --profile cn up -d
+# Flink CDC: docker compose --profile be --profile flink up -d
+# Risingwave CDC: docker compose --profile be --profile risingwave up -d
+# OpenMetadata: docker compose --profile be --profile openmetadata up -d
+# dbt ETL: docker compose --profile be --profile dbt up
 
 services:
   # ===========================================
@@ -9,7 +13,7 @@ services:
   mysql:
     image: mysql:8.0
     container_name: mysql
-    profiles: ["be", "cn"]
+    profiles: ["be", "cn", "flink", "risingwave", "openmetadata", "dbt"]
     environment:
       MYSQL_ROOT_PASSWORD: "StarRocksDemo1!"
       MYSQL_DATABASE: demo_db
@@ -40,7 +44,7 @@ services:
   mysql-init:
     image: mysql:8.0
     container_name: mysql-init
-    profiles: ["be", "cn"]
+    profiles: ["be", "cn", "flink", "risingwave", "openmetadata", "dbt"]
     depends_on:
       mysql:
         condition: service_healthy
@@ -237,11 +241,291 @@ services:
       timeout: 5s
       retries: 3
 
+  # ===========================================
+  # Flink CDC (flink 프로필)
+  # ===========================================
+  flink-jobmanager:
+    image: flink:1.20-java11
+    hostname: flink-jobmanager
+    container_name: flink-jobmanager
+    profiles: ["flink"]
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        parallelism.default: 2
+        execution.checkpointing.interval: 30000
+        state.backend: hashmap
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+      - ./config/flink/lib:/opt/flink/lib/custom:ro
+      - ./scripts/flink:/opt/flink/jobs:ro
+    networks:
+      - starrocks-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      starrocks-fe-be:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  flink-taskmanager:
+    image: flink:1.20-java11
+    hostname: flink-taskmanager
+    container_name: flink-taskmanager
+    profiles: ["flink"]
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 2g
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+      - ./config/flink/lib:/opt/flink/lib/custom:ro
+    networks:
+      - starrocks-net
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    restart: unless-stopped
+
+  flink-sql-client:
+    image: flink:1.20-java11
+    container_name: flink-sql-client
+    profiles: ["flink"]
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+      starrocks-be:
+        condition: service_healthy
+    volumes:
+      - ./config/flink/lib:/opt/flink/lib/custom:ro
+      - ./scripts/flink:/opt/flink/jobs:ro
+    networks:
+      - starrocks-net
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        rest.address: flink-jobmanager
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for Flink cluster and StarRocks..."
+        sleep 30
+        echo "Flink SQL Client ready. Use: docker exec -it flink-sql-client ./bin/sql-client.sh"
+        echo "Or submit job: ./bin/flink run -d /opt/flink/jobs/your-job.jar"
+        tail -f /dev/null
+    restart: unless-stopped
+
+  # ===========================================
+  # Risingwave CDC (risingwave 프로필)
+  # ===========================================
+  risingwave:
+    image: risingwavelabs/risingwave:v2.1.0
+    hostname: risingwave
+    container_name: risingwave
+    profiles: ["risingwave"]
+    command: "standalone --meta-opts \"--listen-addr 0.0.0.0:5690 --advertise-addr risingwave:5690 --backend mem\" --compute-opts \"--listen-addr 0.0.0.0:5688 --advertise-addr risingwave:5688\" --frontend-opts \"--listen-addr 0.0.0.0:4566 --advertise-addr risingwave:4566\" --compactor-opts \"--listen-addr 0.0.0.0:6660 --advertise-addr risingwave:6660\""
+    ports:
+      - "4566:4566"
+      - "5691:5691"
+    volumes:
+      - risingwave_data:/risingwave/state_store
+    networks:
+      - starrocks-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "psql -h localhost -p 4566 -U root -d dev -c 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  risingwave-init:
+    image: postgres:15-alpine
+    container_name: risingwave-init
+    profiles: ["risingwave"]
+    volumes:
+      - ./scripts/risingwave:/scripts:ro
+    networks:
+      - starrocks-net
+    depends_on:
+      risingwave:
+        condition: service_healthy
+      starrocks-fe-be:
+        condition: service_healthy
+      starrocks-be:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Waiting for StarRocks BE to be ready..."
+        sleep 15
+        echo "Preparing StarRocks tables for Risingwave sink..."
+        PGPASSWORD='' psql -h starrocks-fe -p 9030 -U root -f /scripts/starrocks-prepare.sql || true
+        echo "Initializing Risingwave CDC pipeline..."
+        PGPASSWORD='' psql -h risingwave -p 4566 -U root -d dev -f /scripts/risingwave-init.sql
+        echo "Risingwave CDC pipeline initialized."
+    restart: "no"
+
+  # ===========================================
+  # OpenMetadata (openmetadata 프로필)
+  # ===========================================
+  openmetadata-postgres:
+    image: postgres:15-alpine
+    hostname: openmetadata-postgres
+    container_name: openmetadata-postgres
+    profiles: ["openmetadata"]
+    environment:
+      POSTGRES_USER: openmetadata
+      POSTGRES_PASSWORD: "StarRocksDemo1!"
+      POSTGRES_DB: openmetadata_db
+    volumes:
+      - openmetadata_postgres_data:/var/lib/postgresql/data
+    networks:
+      - starrocks-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openmetadata -d openmetadata_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  openmetadata-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    hostname: openmetadata-elasticsearch
+    container_name: openmetadata-elasticsearch
+    profiles: ["openmetadata"]
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - openmetadata_es_data:/usr/share/elasticsearch/data
+    networks:
+      - starrocks-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  openmetadata-server:
+    image: docker.io/openmetadata/server:1.5.14
+    hostname: openmetadata-server
+    container_name: openmetadata-server
+    profiles: ["openmetadata"]
+    ports:
+      - "8585:8585"
+      - "8586:8586"
+    environment:
+      OPENMETADATA_CLUSTER_NAME: openmetadata
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME: postgresql
+      DB_HOST: openmetadata-postgres
+      DB_PORT: "5432"
+      DB_USER: openmetadata
+      DB_USER_PASSWORD: "StarRocksDemo1!"
+      DB_NAME: openmetadata_db
+      SEARCH_TYPE: elasticsearch
+      ELASTICSEARCH_HOST: openmetadata-elasticsearch
+      ELASTICSEARCH_PORT: "9200"
+      ELASTICSEARCH_SCHEME: http
+      SERVER_HOST_API_URL: http://localhost:8585/api
+      AUTHENTICATION_PROVIDER: basic
+      AUTHENTICATION_PUBLIC_KEYS: "[http://localhost:8585/api/v1/system/config/jwks]"
+      AUTHENTICATION_AUTHORITY: http://localhost:8585/api/v1/system/config/authorizer
+      AUTHORIZER_CLASS_NAME: org.openmetadata.service.security.DefaultAuthorizer
+      AUTHORIZER_REQUEST_FILTER: org.openmetadata.service.security.JwtFilter
+      AUTHORIZER_ADMIN_PRINCIPALS: "[admin]"
+      AUTHORIZER_PRINCIPAL_DOMAIN: openmetadata.org
+    networks:
+      - starrocks-net
+    depends_on:
+      openmetadata-postgres:
+        condition: service_healthy
+      openmetadata-elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8585/api/v1/system/version"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    restart: unless-stopped
+
+  # ===========================================
+  # dbt ETL (dbt 프로필)
+  # ===========================================
+  dbt-starrocks:
+    build:
+      context: ./config/dbt
+      dockerfile: Dockerfile
+    container_name: dbt-starrocks
+    profiles: ["dbt"]
+    volumes:
+      - ./config/dbt/project:/dbt/project:ro
+      - ./config/dbt/profiles:/root/.dbt:ro
+      - dbt_logs:/dbt/logs
+    networks:
+      - starrocks-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      starrocks-fe-be:
+        condition: service_healthy
+      starrocks-be:
+        condition: service_healthy
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for StarRocks BE to be ready..."
+        sleep 20
+        echo "Creating MySQL External Catalog if not exists..."
+        mysql -h starrocks-fe -P 9030 -u root -e "
+        CREATE EXTERNAL CATALOG IF NOT EXISTS mysql_catalog
+        PROPERTIES (
+            'type' = 'jdbc',
+            'user' = 'root',
+            'password' = 'StarRocksDemo1!',
+            'jdbc_uri' = 'jdbc:mysql://mysql:3306?allowPublicKeyRetrieval=true&useSSL=false',
+            'driver_url' = 'https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar',
+            'driver_class' = 'com.mysql.cj.jdbc.Driver'
+        );" || true
+        echo "Running dbt debug..."
+        cd /dbt/project && dbt debug --profiles-dir /root/.dbt
+        echo "Running dbt run..."
+        dbt run --profiles-dir /root/.dbt
+        echo "Running dbt test..."
+        dbt test --profiles-dir /root/.dbt || true
+        echo "dbt ETL completed."
+    restart: "no"
+
 networks:
   starrocks-net:
     driver: bridge
 
 volumes:
+  # 기존 볼륨
   mysql_data:
   fe_meta:
   fe_log:
@@ -251,3 +535,12 @@ volumes:
   be_log:
   cn_log:
   minio_data:
+  # Flink 볼륨
+  flink_checkpoints:
+  # Risingwave 볼륨
+  risingwave_data:
+  # OpenMetadata 볼륨
+  openmetadata_postgres_data:
+  openmetadata_es_data:
+  # dbt 볼륨
+  dbt_logs:

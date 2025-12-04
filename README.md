@@ -11,6 +11,10 @@ MySQL에서 StarRocks로의 데이터 동기화(CDC) 데모 환경입니다-TASK
 - StarRocks External Catalog를 통한 MySQL 연결
 - Primary Key 테이블을 활용한 CDC 구현
 - 스케줄 Task를 통한 주기적 동기화
+- **Flink CDC를 통한 실시간 스트리밍**
+- **Risingwave를 통한 스트리밍 CDC**
+- **OpenMetadata를 통한 데이터 카탈로그**
+- **dbt를 통한 ELT 변환**
 
 ## **아키텍처 설명**
 
@@ -20,6 +24,15 @@ MySQL에서 StarRocks로의 데이터 동기화(CDC) 데모 환경입니다-TASK
 | --- | --- | --- |
 | **BE (Backend)** | 로컬 디스크 기반 스토리지 | 고성능 OLAP, 낮은 지연 |
 | **CN (Compute Node)** | S3/MinIO 오브젝트 스토리지 | Data Lake 통합, 탄력적 확장 |
+
+### **추가 시나리오 (프로필)**
+
+| 프로필 | 설명 | 실행 명령 |
+| --- | --- | --- |
+| **flink** | Flink CDC 실시간 동기화 | `docker compose --profile be --profile flink up -d` |
+| **risingwave** | Risingwave 스트리밍 CDC | `docker compose --profile be --profile risingwave up -d` |
+| **openmetadata** | OpenMetadata 데이터 카탈로그 | `docker compose --profile be --profile openmetadata up -d` |
+| **dbt** | dbt ELT 변환 | `docker compose --profile be --profile dbt up` |
 
 ---
 
@@ -485,6 +498,7 @@ docker compose --profile be --profile cn down -v --rmi all
 starrocks_demo/
 ├── docker-compose.yml          # Docker Compose 설정
 ├── README.md                   # 이 문서
+├── CLAUDE.md                   # Claude Code 가이드
 ├── demo.sql                    # 원본 데모 SQL (참고용)
 ├── config/
 │   ├── mysql/
@@ -493,13 +507,141 @@ starrocks_demo/
 │   │   └── fe.conf             # StarRocks FE 설정
 │   ├── be/
 │   │   └── be.conf             # StarRocks BE 설정
-│   └── cn/
-│       └── cn.conf             # StarRocks CN 설정
+│   ├── cn/
+│   │   └── cn.conf             # StarRocks CN 설정
+│   ├── flink/
+│   │   └── lib/README.md       # Flink CDC JAR 다운로드 안내
+│   ├── dbt/
+│   │   ├── Dockerfile          # dbt 컨테이너 이미지
+│   │   ├── profiles/           # dbt 프로필 설정
+│   │   └── project/            # dbt 프로젝트 (모델)
+│   └── openmetadata/
+│       └── README.md           # OpenMetadata 연결 안내
 └── scripts/
     ├── mysql-init.sql          # MySQL 초기화 스크립트
     ├── starrocks-be-init.sql   # BE 모드 StarRocks 초기화
-    └── starrocks-cn-init.sql   # CN 모드 StarRocks 초기화
+    ├── starrocks-cn-init.sql   # CN 모드 StarRocks 초기화
+    ├── flink/                  # Flink CDC 스크립트
+    ├── risingwave/             # Risingwave 초기화 스크립트
+    └── openmetadata/           # OpenMetadata 서비스 설정
 
+```
+
+---
+
+## **추가 시나리오**
+
+### **Flink CDC 모드**
+
+Apache Flink를 사용한 실시간 CDC 파이프라인입니다.
+
+```bash
+# 1. Flink 프로필 시작
+docker compose --profile be --profile flink up -d
+
+# 2. Flink Web UI 확인
+open http://localhost:8081
+
+# 3. Flink SQL Client 접속
+docker exec -it flink-sql-client ./bin/sql-client.sh
+```
+
+**필수 사전 작업**: `config/flink/lib/README.md`를 참고하여 필요한 JAR 파일을 다운로드하세요.
+
+**서비스 접속 정보:**
+| 서비스 | 포트 | 용도 |
+| --- | --- | --- |
+| Flink Web UI | 8081 | Job 모니터링 |
+
+---
+
+### **Risingwave CDC 모드**
+
+Risingwave 스트리밍 데이터베이스를 사용한 CDC 및 실시간 집계입니다.
+
+```bash
+# 1. Risingwave 프로필 시작
+docker compose --profile be --profile risingwave up -d
+
+# 2. Risingwave 연결
+psql -h localhost -p 4566 -U root -d dev
+
+# 3. CDC 테이블 확인
+SELECT * FROM products_cdc LIMIT 10;
+
+# 4. Materialized View 확인
+SELECT * FROM products_by_category;
+```
+
+**서비스 접속 정보:**
+| 서비스 | 포트 | 용도 |
+| --- | --- | --- |
+| Risingwave SQL | 4566 | PostgreSQL 호환 인터페이스 |
+| Risingwave Dashboard | 5691 | 모니터링 대시보드 |
+
+---
+
+### **OpenMetadata 모드**
+
+OpenMetadata를 사용한 데이터 카탈로그 및 거버넌스입니다.
+
+```bash
+# 1. OpenMetadata 프로필 시작 (초기화에 2-3분 소요)
+docker compose --profile be --profile openmetadata up -d
+
+# 2. 서비스 상태 확인
+docker compose --profile openmetadata ps
+
+# 3. Web UI 접속
+open http://localhost:8585
+```
+
+**기본 자격증명:**
+- Username: `admin`
+- Password: `admin`
+
+**서비스 접속 정보:**
+| 서비스 | 포트 | 용도 |
+| --- | --- | --- |
+| OpenMetadata UI | 8585 | 웹 인터페이스 |
+| OpenMetadata Admin | 8586 | 관리 API |
+
+**데이터 소스 연결 방법**은 `config/openmetadata/README.md`를 참고하세요.
+
+---
+
+### **dbt ETL 모드**
+
+dbt를 사용한 ELT 변환 파이프라인입니다.
+
+```bash
+# 1. dbt 프로필 실행 (one-shot)
+docker compose --profile be --profile dbt up
+
+# 2. 실행 로그 확인
+docker logs dbt-starrocks
+
+# 3. 생성된 테이블 확인
+mysql -h 127.0.0.1 -P 9030 -u root -e "SHOW TABLES FROM dbt_analytics;"
+```
+
+**생성되는 dbt 모델:**
+- `stg_products`: MySQL 데이터 스테이징
+- `mart_category_stats`: 카테고리별 통계
+- `mart_inventory_value`: 재고 가치 계산
+
+**dbt 프로젝트 구조:**
+```
+config/dbt/
+├── Dockerfile
+├── profiles/profiles.yml
+└── project/
+    ├── dbt_project.yml
+    └── models/
+        ├── staging/stg_products.sql
+        └── marts/
+            ├── mart_category_stats.sql
+            └── mart_inventory_value.sql
 ```
 
 ---
@@ -518,6 +660,14 @@ starrocks_demo/
 - [StarRocks External Catalog (JDBC)](https://docs.starrocks.io/docs/data_source/catalog/jdbc_catalog/)
 - [StarRocks Primary Key 테이블](https://docs.starrocks.io/docs/table_design/table_types/primary_key_table/)
 - [StarRocks Task 스케줄링](https://docs.starrocks.io/docs/loading/Etl_using_task/)
+
+### **추가 시나리오 문서**
+
+- [Flink CDC Documentation](https://nightlies.apache.org/flink/flink-cdc-docs-release-3.2/)
+- [StarRocks Flink Connector](https://docs.starrocks.io/docs/loading/Flink-connector-starrocks/)
+- [Risingwave Documentation](https://docs.risingwave.com/)
+- [OpenMetadata Documentation](https://docs.open-metadata.org/)
+- [dbt-starrocks](https://github.com/StarRocks/dbt-starrocks)
 
 ---
 

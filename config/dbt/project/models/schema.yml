@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: stg_products
+    description: "Staged products data from MySQL via External Catalog"
+    columns:
+      - name: product_id
+        description: "Primary key"
+        tests:
+          - unique
+          - not_null
+      - name: product_name
+        description: "Product name"
+      - name: category
+        description: "Product category"
+      - name: price
+        description: "Product price"
+      - name: stock_quantity
+        description: "Current stock quantity"
+      - name: last_updated
+        description: "Last update timestamp from source"
+      - name: _loaded_at
+        description: "ETL load timestamp"
+
+  - name: mart_category_stats
+    description: "Aggregated statistics by product category"
+    columns:
+      - name: category
+        description: "Product category"
+        tests:
+          - unique
+          - not_null
+      - name: product_count
+        description: "Number of products in category"
+      - name: avg_price
+        description: "Average product price"
+      - name: min_price
+        description: "Minimum product price"
+      - name: max_price
+        description: "Maximum product price"
+      - name: total_stock
+        description: "Total stock quantity"
+      - name: last_product_update
+        description: "Most recent product update in category"
+      - name: _refreshed_at
+        description: "Model refresh timestamp"
+
+  - name: mart_inventory_value
+    description: "Inventory value calculation per product"
+    columns:
+      - name: product_id
+        description: "Primary key"
+        tests:
+          - unique
+          - not_null
+      - name: product_name
+        description: "Product name"
+      - name: category
+        description: "Product category"
+      - name: price
+        description: "Unit price"
+      - name: stock_quantity
+        description: "Current stock quantity"
+      - name: inventory_value
+        description: "Total inventory value (price * quantity)"
+      - name: stock_level
+        description: "Stock level indicator (Low/Medium/High)"
+      - name: last_updated
+        description: "Last update timestamp"
+      - name: _calculated_at
+        description: "Calculation timestamp"

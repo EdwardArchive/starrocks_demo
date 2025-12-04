@@ -1,0 +1,21 @@
+name: 'starrocks_demo'
+version: '1.0.0'
+config-version: 2
+
+profile: 'starrocks_demo'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+  - "logs"
+
+vars:
+  mysql_catalog: mysql_catalog
+  source_database: demo_db
