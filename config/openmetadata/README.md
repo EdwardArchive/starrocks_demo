@@ -3,7 +3,7 @@
 ## 기본 자격증명
 
 - **URL**: http://localhost:8585
-- **Username**: admin
+- **Username**: admin@openmetadata.org
 - **Password**: admin
 
 ## MySQL 데이터베이스 연결

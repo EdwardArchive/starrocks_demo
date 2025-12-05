@@ -9,8 +9,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install dbt-starrocks
 RUN pip install --no-cache-dir \
-    dbt-core==1.8.8 \
-    dbt-starrocks==1.8.0
+    dbt-starrocks==1.11.0
 
 # Create working directory
 WORKDIR /dbt

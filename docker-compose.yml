@@ -137,7 +137,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: minio
-    profiles: ["cn"]
+    profiles: ["cn", "openmetadata"]
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -339,11 +339,11 @@ services:
   # Risingwave CDC (risingwave 프로필)
   # ===========================================
   risingwave:
-    image: risingwavelabs/risingwave:v2.1.0
+    image: risingwavelabs/risingwave:latest
     hostname: risingwave
     container_name: risingwave
     profiles: ["risingwave"]
-    command: "standalone --meta-opts \"--listen-addr 0.0.0.0:5690 --advertise-addr risingwave:5690 --backend mem\" --compute-opts \"--listen-addr 0.0.0.0:5688 --advertise-addr risingwave:5688\" --frontend-opts \"--listen-addr 0.0.0.0:4566 --advertise-addr risingwave:4566\" --compactor-opts \"--listen-addr 0.0.0.0:6660 --advertise-addr risingwave:6660\""
+    command: "single_node"
     ports:
       - "4566:4566"
       - "5691:5691"
@@ -355,10 +355,11 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "psql -h localhost -p 4566 -U root -d dev -c 'SELECT 1' || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5691/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 15
+      start_period: 30s
     restart: unless-stopped
 
   risingwave-init:
@@ -403,6 +404,7 @@ services:
       POSTGRES_DB: openmetadata_db
     volumes:
       - openmetadata_postgres_data:/var/lib/postgresql/data
+      - ./config/openmetadata/postgres-init.sh:/docker-entrypoint-initdb.d/init-airflow-db.sh:ro
     networks:
       - starrocks-net
     healthcheck:
@@ -432,6 +434,33 @@ services:
       retries: 10
     restart: unless-stopped
 
+  openmetadata-migrate:
+    image: docker.io/openmetadata/server:1.5.14
+    container_name: openmetadata-migrate
+    profiles: ["openmetadata"]
+    command: ["./bootstrap/openmetadata-ops.sh", "migrate", "--force"]
+    environment:
+      OPENMETADATA_CLUSTER_NAME: openmetadata
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME: postgresql
+      DB_HOST: openmetadata-postgres
+      DB_PORT: "5432"
+      DB_USER: openmetadata
+      DB_USER_PASSWORD: "StarRocksDemo1!"
+      DB_NAME: openmetadata_db
+      SEARCH_TYPE: elasticsearch
+      ELASTICSEARCH_HOST: openmetadata-elasticsearch
+      ELASTICSEARCH_PORT: "9200"
+      ELASTICSEARCH_SCHEME: http
+    networks:
+      - starrocks-net
+    depends_on:
+      openmetadata-postgres:
+        condition: service_healthy
+      openmetadata-elasticsearch:
+        condition: service_healthy
+    restart: "no"
+
   openmetadata-server:
     image: docker.io/openmetadata/server:1.5.14
     hostname: openmetadata-server
@@ -453,7 +482,7 @@ services:
       ELASTICSEARCH_HOST: openmetadata-elasticsearch
       ELASTICSEARCH_PORT: "9200"
       ELASTICSEARCH_SCHEME: http
-      SERVER_HOST_API_URL: http://localhost:8585/api
+      SERVER_HOST_API_URL: http://openmetadata-server:8585/api
       AUTHENTICATION_PROVIDER: basic
       AUTHENTICATION_PUBLIC_KEYS: "[http://localhost:8585/api/v1/system/config/jwks]"
       AUTHENTICATION_AUTHORITY: http://localhost:8585/api/v1/system/config/authorizer
@@ -461,6 +490,13 @@ services:
       AUTHORIZER_REQUEST_FILTER: org.openmetadata.service.security.JwtFilter
       AUTHORIZER_ADMIN_PRINCIPALS: "[admin]"
       AUTHORIZER_PRINCIPAL_DOMAIN: openmetadata.org
+      # Pipeline Service Client (Ingestion)
+      PIPELINE_SERVICE_CLIENT_ENDPOINT: http://openmetadata-ingestion:8080
+      PIPELINE_SERVICE_CLIENT_CLASS_NAME: org.openmetadata.service.clients.pipeline.airflow.AirflowRESTClient
+      PIPELINE_SERVICE_CLIENT_VERIFY_SSL: "no-ssl"
+      PIPELINE_SERVICE_CLIENT_HEALTH_CHECK_INTERVAL: "300"
+      AIRFLOW_USERNAME: admin
+      AIRFLOW_PASSWORD: admin
     networks:
       - starrocks-net
     depends_on:
@@ -468,12 +504,61 @@ services:
         condition: service_healthy
       openmetadata-elasticsearch:
         condition: service_healthy
+      openmetadata-migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/api/v1/system/version"]
       interval: 15s
       timeout: 10s
       retries: 15
       start_period: 60s
+    restart: unless-stopped
+
+  openmetadata-ingestion:
+    image: docker.io/openmetadata/ingestion:1.5.14
+    hostname: openmetadata-ingestion
+    container_name: openmetadata-ingestion
+    profiles: ["openmetadata"]
+    entrypoint: /bin/bash
+    command: /opt/airflow/ingestion_dependency.sh
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__PARALLELISM: "16"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://openmetadata:StarRocksDemo1!@openmetadata-postgres:5432/airflow_db
+      AIRFLOW__WEBSERVER__SECRET_KEY: openmetadata-secret
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW_HOME: /opt/airflow
+      # OpenMetadata Airflow API settings
+      AIRFLOW__OPENMETADATA_AIRFLOW_APIS__DAG_GENERATED_CONFIGS: /opt/airflow/dag_generated_configs
+      AIRFLOW__OPENMETADATA_AIRFLOW_APIS__DAG_RUNNER_CONFIG_PATH: /opt/airflow/config/dag_runner_config.json
+      # OpenMetadata Server connection
+      OPENMETADATA_SERVER_HOST_API_URL: http://openmetadata-server:8585/api
+      # Lineage settings for example DAGs
+      AIRFLOW__LINEAGE__OPENMETADATA_API_ENDPOINT: http://openmetadata-server:8585/api
+      AIRFLOW__LINEAGE__BACKEND: airflow_provider_openmetadata.lineage.backend.OpenMetadataLineageBackend
+      # Airflow Connection for OpenMetadata (auto-created)
+      AIRFLOW_CONN_OPENMETADATA_CONN_ID: http://openmetadata-server:8585/api
+    volumes:
+      - openmetadata_ingestion_data:/opt/airflow
+      - openmetadata_dag_configs:/opt/airflow/dag_generated_configs
+      - openmetadata_dags:/opt/airflow/dags
+    networks:
+      - starrocks-net
+    depends_on:
+      openmetadata-postgres:
+        condition: service_healthy
+      openmetadata-server:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
     restart: unless-stopped
 
   # ===========================================
@@ -546,5 +631,8 @@ volumes:
   # OpenMetadata 볼륨
   openmetadata_postgres_data:
   openmetadata_es_data:
+  openmetadata_ingestion_data:
+  openmetadata_dag_configs:
+  openmetadata_dags:
   # dbt 볼륨
   dbt_logs:
