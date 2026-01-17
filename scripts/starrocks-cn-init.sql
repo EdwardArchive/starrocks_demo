@@ -6,7 +6,7 @@ CREATE EXTERNAL CATALOG IF NOT EXISTS mysql_catalog
 PROPERTIES (
     "type" = "jdbc",
     "user" = "root",
-    "password" = "StarRocksDemo1!",
+    "password" = "starrocks_demo_pw1#",
     "jdbc_uri" = "jdbc:mysql://mysql:3306?allowPublicKeyRetrieval=true&useSSL=false",
     "driver_url" = "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar",
     "driver_class" = "com.mysql.cj.jdbc.Driver"

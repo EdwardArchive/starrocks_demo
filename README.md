@@ -198,168 +198,49 @@ docker logs -f starrocks-fe
 
 | 서비스 | 포트 | 접속 방법 |
 | --- | --- | --- |
-| MySQL | 3306 | `mysql -h 127.0.0.1 -P 3306 -u root -p'StarRocksDemo1!'` |
-| StarRocks (MySQL Protocol) | 9030 | `mysql -h 127.0.0.1 -P 9030 -u root` |
+| MySQL | 3306 | `mysql -h 127.0.0.1 -P 3306 -u root -p'starrocks_demo_pw1#'` |
+| StarRocks (MySQL Protocol) | 9030 | `mysql -h 127.0.0.1 -P 9030 -u root -p'starrocks_demo_pw1#'` |
 | StarRocks Web UI | 8030 | [http://127.0.0.1:8030](http://127.0.0.1:8030/) |
+| Flink Web UI (flink모드) | 8082 | [http://127.0.0.1:8082](http://127.0.0.1:8082/) |
 | MinIO Console (CN모드) | 9001 | [http://127.0.0.1:9001](http://127.0.0.1:9001/) (admin / StarRocksDemo1!_minio) |
+
+---
+
+## **Flink CDC 모드 (실시간 동기화)**
+
+Task 스케줄링 대신 Flink CDC를 사용한 실시간 binlog 기반 동기화도 지원합니다.
+
+```bash
+docker compose --profile be --profile flink up -d --build
+```
+
+자세한 사용법은 [howto/CDC_Flink.md](howto/CDC_Flink.md)를 참조하세요.
 
 ---
 
 ## **데모 시나리오**
 
-### **Step 1: MySQL 데이터 확인**
+두 가지 방식의 MySQL → StarRocks 데이터 동기화를 지원합니다.
 
-MySQL이 초기화되면 자동으로 샘플 데이터가 생성됩니다.
+### **Task 스케줄링 방식 (기본)**
 
-> 참고: MySQL 초기화 스크립트는 볼륨이 처음 생성될 때만 실행됩니다. 기존 볼륨이 있는 상태에서 다시 시작하면 초기화가 실행되지 않습니다. 데이터를 초기화하려면 docker compose --profile <mode> down -v로 볼륨을 삭제하세요.
-> 
+StarRocks의 External Catalog와 주기적 Task를 사용한 데이터 동기화입니다.
 
-```bash
-# MySQL 접속
-mysql -h 127.0.0.1 -P 3306 -u root -p'StarRocksDemo1!'
-```
+- External Catalog로 MySQL 직접 조회 (Federation Query)
+- Primary Key 테이블로 UPSERT 동작 지원
+- 설정된 주기(예: 5분)마다 변경 데이터 동기화
 
-```sql
--- 데이터베이스 확인
-USE demo_db;
+자세한 사용법은 [howto/Syncdata_MySQL.md](howto/Syncdata_MySQL.md)를 참조하세요.
 
--- 테이블 확인
-SHOW TABLES;
+### **Flink CDC 방식 (실시간)**
 
--- 데이터 확인 (1005개 레코드)
-SELECT COUNT(*) FROM products;
+Apache Flink CDC를 사용한 실시간 binlog 기반 동기화입니다.
 
--- 카테고리별 통계
-SELECT category, COUNT(*) as cnt, AVG(price) as avg_price
-FROM products
-GROUP BY category;
-```
+- 밀리초 단위 지연으로 실시간 동기화
+- 스키마 변경 자동 전파 (CDC 3.0+)
+- Flink 클러스터 필요
 
-### **Step 2: StarRocks External Catalog 생성**
-
-StarRocks에서 MySQL 카탈로그를 생성합니다.
-
-```bash
-# StarRocks 접속
-mysql -h 127.0.0.1 -P 9030 -u root
-```
-
-```sql
--- MySQL External Catalog 생성-- 주의: MySQL 8.0의 경우 allowPublicKeyRetrieval=true&useSSL=false 옵션 필요
-CREATE EXTERNAL CATALOG IF NOT EXISTS mysql_catalog
-PROPERTIES (
-    "type" = "jdbc",
-    "user" = "root",
-    "password" = "StarRocksDemo1!",
-    "jdbc_uri" = "jdbc:mysql://mysql:3306?allowPublicKeyRetrieval=true&useSSL=false",
-    "driver_url" = "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar",
-    "driver_class" = "com.mysql.cj.jdbc.Driver"
-);
-
--- Catalog 확인
-SHOW CATALOGS;
-
--- MySQL 데이터베이스 확인
-SHOW DATABASES FROM mysql_catalog;
-
--- MySQL 테이블 직접 조회 (Federation Query)
-SELECT * FROM mysql_catalog.demo_db.products LIMIT 10;
-```
-
-### **Step 3: CDC 동기화 테이블 생성**
-
-데이터 동기화를 위한 Primary Key 테이블을 생성합니다.
-
-```sql
--- 분석용 데이터베이스 생성
-CREATE DATABASE IF NOT EXISTS analytics_db;
-USE analytics_db;
-
--- Primary Key 테이블 생성
-CREATE TABLE IF NOT EXISTS products_sync (
-    product_id INT,
-    product_name VARCHAR(100),
-    category VARCHAR(100),
-    price DECIMAL(10, 2),
-    stock_quantity INT,
-    last_updated DATETIME,
-    sync_time DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-PRIMARY KEY (product_id)
-DISTRIBUTED BY HASH(product_id) BUCKETS 3
-PROPERTIES (
-    "replication_num" = "1",
-    "enable_persistent_index" = "true"
-);
-
--- 초기 데이터 동기화 (전체 로드)
-INSERT INTO analytics_db.products_sync
-    (product_id, product_name, category, price, stock_quantity, last_updated, sync_time)
-SELECT
-    product_id, product_name, category, price, stock_quantity, last_updated, NOW()
-FROM mysql_catalog.demo_db.products;
-
--- 동기화 확인
-SELECT COUNT(*) FROM analytics_db.products_sync;
-
-```
-
-### **Step 4: 주기적 동기화 Task 설정**
-
-5분마다 변경된 데이터를 동기화하는 Task를 생성합니다.
-
-```sql
--- 스케줄 Task 생성
-SUBMIT TASK sync_products_scheduled
-SCHEDULE EVERY(INTERVAL 10 SECOND)
-AS INSERT INTO analytics_db.products_sync
-    (product_id, product_name, category, price, stock_quantity, last_updated, sync_time)
-SELECT
-    product_id, product_name, category, price, stock_quantity, last_updated, NOW()
-FROM mysql_catalog.demo_db.products
-WHERE last_updated >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE);
-
--- Task 확인
-SELECT * FROM information_schema.tasks;
-```
-
-### **Step 5: 실시간 변경 테스트**
-
-MySQL에서 데이터를 변경하고 StarRocks에서 확인합니다.
-
-**MySQL에서 데이터 변경:**
-
-```sql
--- MySQL 접속
-mysql -h 127.0.0.1 -P 3306 -u root -p'StarRocksDemo1!' demo_db
-
--- 가격 업데이트
-UPDATE products SET price = price * 1.1 WHERE product_id = 1;
-
--- 신규 데이터 추가
-INSERT INTO products (product_name, category, price, stock_quantity)
-VALUES ('테스트 상품', '테스트', 99999, 100);
-
--- 변경 확인
-SELECT * FROM products WHERE product_id IN (1, (SELECT MAX(product_id) FROM products));
-
-```
-
-**StarRocks에서 즉시 확인 (Federation Query):**
-
-```sql
--- StarRocks 접속
-mysql -h 127.0.0.1 -P 9030 -u root
-
--- MySQL(External Catalog) 데이터 직접 조회 (실시간)
-SELECT * FROM mysql_catalog.demo_db.products WHERE product_id = 1
-  UNION ALL
-  SELECT * FROM mysql_catalog.demo_db.products WHERE product_id = (SELECT MAX(product_id) FROM mysql_catalog.demo_db.products)
-
--- 동기화 결과 확인
-SELECT * FROM analytics_db.products_sync
-WHERE product_id IN (1, (SELECT MAX(product_id) FROM analytics_db.products_sync));
-```
+자세한 사용법은 [howto/CDC_Flink.md](howto/CDC_Flink.md)를 참조하세요.
 
 ---
 
@@ -380,14 +261,14 @@ docker exec starrocks-fe ls -la /opt/starrocks/fe/meta
 
 ```bash
 # StarRocks에서 BE/CN 상태 확인
-mysql -h 127.0.0.1 -P 9030 -u root -e "SHOW BACKENDS;"
-mysql -h 127.0.0.1 -P 9030 -u root -e "SHOW COMPUTE NODES;"
+mysql -h 127.0.0.1 -P 9030 -u root -p'starrocks_demo_pw1#' -e "SHOW BACKENDS;"
+mysql -h 127.0.0.1 -P 9030 -u root -p'starrocks_demo_pw1#' -e "SHOW COMPUTE NODES;"
 
 # 수동으로 BE 등록
-mysql -h 127.0.0.1 -P 9030 -u root -e "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';"
+mysql -h 127.0.0.1 -P 9030 -u root -p'starrocks_demo_pw1#' -e "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';"
 
 # 수동으로 CN 등록
-mysql -h 127.0.0.1 -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';"
+mysql -h 127.0.0.1 -P 9030 -u root -p'starrocks_demo_pw1#' -e "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';"
 
 ```
 
@@ -398,7 +279,7 @@ mysql -h 127.0.0.1 -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-
 docker logs mysql
 
 # MySQL 네트워크 연결 테스트
-docker exec starrocks-fe mysql -h mysql -P 3306 -u root -p'StarRocksDemo1!' -e "SELECT 1;"
+docker exec starrocks-fe mysql -h mysql -P 3306 -u root -p'starrocks_demo_pw1#' -e "SELECT 1;"
 
 ```
 
@@ -495,6 +376,13 @@ starrocks_demo/
 │   │   └── be.conf             # StarRocks BE 설정
 │   └── cn/
 │       └── cn.conf             # StarRocks CN 설정
+├── flink-cdc/                  # Flink CDC 설정 (flink 프로파일)
+│   ├── Dockerfile              # Flink + CDC 커스텀 이미지
+│   └── pipelines/
+│       └── mysql-to-starrocks.yaml  # CDC 파이프라인 설정
+├── howto/                      # 사용 가이드
+│   ├── CDC_Flink.md            # Flink CDC 사용법
+│   └── Syncdata_MySQL.md       # Task 스케줄링 사용법
 └── scripts/
     ├── mysql-init.sql          # MySQL 초기화 스크립트
     ├── starrocks-be-init.sql   # BE 모드 StarRocks 초기화
