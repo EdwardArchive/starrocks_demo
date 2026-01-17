@@ -1,10 +1,8 @@
 -- MySQL 초기화 스크립트
 -- StarRocks CDC 데모용
 
--- 사용자 생성
-CREATE USER IF NOT EXISTS 'heidi'@'%' IDENTIFIED BY 'StarRocksDemo1!';
-GRANT ALL PRIVILEGES ON *.* TO 'heidi'@'%' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
+-- root 사용자 외부 접근 허용 (호스트에서 직접 접근용)
+ALTER USER 'root'@'%' IDENTIFIED BY 'starrocks_demo_pw1#';
 
 -- 데이터베이스 생성
 CREATE DATABASE IF NOT EXISTS demo_db;

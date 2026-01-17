@@ -1,0 +1,29 @@
+################################################################################
+# MySQL to StarRocks CDC Pipeline Configuration
+# Flink CDC 3.2.0+
+################################################################################
+
+source:
+  type: mysql
+  hostname: mysql
+  port: 3306
+  username: root
+  password: "starrocks_demo_pw1#"
+  tables: demo_db.products
+  server-id: 5400-5404
+  server-time-zone: UTC
+  jdbc.properties.allowPublicKeyRetrieval: true
+  jdbc.properties.useSSL: false
+
+sink:
+  type: starrocks
+  jdbc-url: jdbc:mysql://starrocks-fe:9030
+  load-url: starrocks-fe:8030
+  username: root
+  password: "starrocks_demo_pw1#"
+  table.create.num-buckets: 1
+  table.create.properties.replication_num: 1
+
+pipeline:
+  name: MySQL to StarRocks CDC Demo
+  parallelism: 2
