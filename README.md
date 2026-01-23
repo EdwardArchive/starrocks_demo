@@ -218,9 +218,32 @@ docker compose --profile be --profile flink up -d --build
 
 ---
 
+## **RisingWave CDC 모드 (스트리밍 데이터베이스)**
+
+PostgreSQL 호환 스트리밍 데이터베이스인 RisingWave를 사용한 실시간 CDC도 지원합니다.
+
+```bash
+# BE 모드 + RisingWave
+docker compose --profile be --profile risingwave up -d
+
+# CN 모드 + RisingWave
+docker compose --profile cn --profile risingwave up -d
+```
+
+### RisingWave 접속 정보
+
+| 서비스 | 포트 | 접속 방법 |
+|--------|------|----------|
+| RisingWave SQL | 4566 | `psql -h 127.0.0.1 -p 4566 -U root -d dev` |
+| RisingWave Dashboard | 5691 | http://localhost:5691 |
+
+자세한 사용법은 [howto/CDC_RisingWave.md](howto/CDC_RisingWave.md)를 참조하세요.
+
+---
+
 ## **데모 시나리오**
 
-두 가지 방식의 MySQL → StarRocks 데이터 동기화를 지원합니다.
+세 가지 방식의 MySQL → StarRocks 데이터 동기화를 지원합니다.
 
 ### **Task 스케줄링 방식 (기본)**
 
@@ -241,6 +264,17 @@ Apache Flink CDC를 사용한 실시간 binlog 기반 동기화입니다.
 - Flink 클러스터 필요
 
 자세한 사용법은 [howto/CDC_Flink.md](howto/CDC_Flink.md)를 참조하세요.
+
+### **RisingWave 방식 (스트리밍 DB)**
+
+RisingWave 스트리밍 데이터베이스를 사용한 실시간 binlog 기반 동기화입니다.
+
+- PostgreSQL 호환 SQL로 간편한 파이프라인 구성
+- 밀리초 단위 지연으로 실시간 동기화
+- 단일 노드로 경량 배포 가능
+- Web Dashboard로 직관적인 모니터링
+
+자세한 사용법은 [howto/CDC_RisingWave.md](howto/CDC_RisingWave.md)를 참조하세요.
 
 ---
 
@@ -380,13 +414,18 @@ starrocks_demo/
 │   ├── Dockerfile              # Flink + CDC 커스텀 이미지
 │   └── pipelines/
 │       └── mysql-to-starrocks.yaml  # CDC 파이프라인 설정
+├── risingwave-cdc/             # RisingWave CDC 설정 (risingwave 프로파일)
+│   └── setup-pipeline.sql      # CDC 파이프라인 설정 SQL
 ├── howto/                      # 사용 가이드
 │   ├── CDC_Flink.md            # Flink CDC 사용법
+│   ├── CDC_RisingWave.md       # RisingWave CDC 사용법
 │   └── Syncdata_MySQL.md       # Task 스케줄링 사용법
 └── scripts/
-    ├── mysql-init.sql          # MySQL 초기화 스크립트
+    ├── mysql-init.sql          # MySQL 초기화 스크립트 (products)
+    ├── mysql-orders-init.sql   # MySQL orders 테이블 초기화
     ├── starrocks-be-init.sql   # BE 모드 StarRocks 초기화
-    └── starrocks-cn-init.sql   # CN 모드 StarRocks 초기화
+    ├── starrocks-cn-init.sql   # CN 모드 StarRocks 초기화
+    └── starrocks-risingwave-init.sql  # RisingWave 모드 StarRocks 초기화
 
 ```
 

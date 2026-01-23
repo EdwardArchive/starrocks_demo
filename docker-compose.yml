@@ -9,7 +9,7 @@ services:
   mysql:
     image: mysql:8.0
     container_name: mysql
-    profiles: ["be", "cn"]
+    profiles: ["be", "cn", "risingwave"]
     environment:
       MYSQL_ROOT_PASSWORD: "starrocks_demo_pw1#"
       MYSQL_DATABASE: demo_db
@@ -40,7 +40,7 @@ services:
   mysql-init:
     image: mysql:8.0
     container_name: mysql-init
-    profiles: ["be", "cn"]
+    profiles: ["be", "cn", "risingwave"]
     depends_on:
       mysql:
         condition: service_healthy
@@ -59,6 +59,14 @@ services:
           echo "Init script completed."
         else
           echo "Products table already exists. Skipping init."
+        fi
+        echo "Checking if orders table exists..."
+        if ! mysql -h mysql -u root -pstarrocks_demo_pw1# -e "SELECT 1 FROM demo_db.orders LIMIT 1" 2>/dev/null; then
+          echo "Orders table not found. Running orders init script..."
+          mysql -h mysql -u root -pstarrocks_demo_pw1# --default-character-set=utf8mb4 < /scripts/mysql-orders-init.sql
+          echo "Orders init script completed."
+        else
+          echo "Orders table already exists. Skipping orders init."
         fi
     restart: "no"
 
@@ -324,6 +332,33 @@ services:
       - flink-jobmanager
     restart: unless-stopped
 
+  # ===========================================
+  # RisingWave CDC (실시간 스트리밍 CDC)
+  # ===========================================
+  risingwave:
+    image: risingwavelabs/risingwave:latest
+    container_name: risingwave
+    profiles: ["risingwave"]
+    hostname: risingwave
+    command: single_node
+    ports:
+      - "4566:4566"   # PostgreSQL 프로토콜 (SQL 인터페이스)
+      - "5691:5691"   # Web Dashboard
+    volumes:
+      - risingwave_data:/risingwave/state_store
+      - ./risingwave-cdc:/risingwave-cdc:ro
+    networks:
+      - starrocks-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "psql", "-h", "localhost", "-p", "4566", "-U", "root", "-d", "dev", "-c", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
 networks:
   starrocks-net:
     driver: bridge
@@ -338,3 +373,4 @@ volumes:
   be_log:
   cn_log:
   minio_data:
+  risingwave_data:
