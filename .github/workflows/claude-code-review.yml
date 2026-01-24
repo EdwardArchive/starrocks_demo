@@ -38,6 +38,22 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --allowedTools
+            "Bash(docker compose*)"
+            "Bash(docker logs*)"
+            "Bash(docker ps*)"
+            "Bash(docker exec*)"
+            "Bash(mysql -h 127.0.0.1*)"
+            "Bash(psql -h 127.0.0.1*)"
+            "Bash(curl*)"
+            "Bash(git diff*)"
+            "Bash(git log*)"
+            "Bash(git status*)"
+            "Bash(git show*)"
+            Read
+            Glob
+            Grep
           prompt: |
             Review this PR following the guidelines in REVIEW.md.
 
@@ -47,7 +63,4 @@ jobs:
             4. For all changes: check if docs need updates
 
             Report results as specified in REVIEW.md.
-          show_full_output: true
-          path_to_claude_code_executable: /home/edwardkim-ai/.local/bin/claude
-          path_to_bun_executable: /home/edwardkim-ai/.bun/bin/bun
 
