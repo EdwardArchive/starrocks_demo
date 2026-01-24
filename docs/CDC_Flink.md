@@ -53,7 +53,7 @@ docker compose --profile be --profile flink ps
 
 ### 파이프라인 설정 파일
 
-`flink-cdc/pipelines/mysql-to-starrocks.yaml` 파일이 CDC 파이프라인을 정의합니다:
+`cdc/flink/pipelines/mysql-to-starrocks.yaml` 파일이 CDC 파이프라인을 정의합니다:
 
 ```yaml
 source:                                    # MySQL CDC 소스 설정

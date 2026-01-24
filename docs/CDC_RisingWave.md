@@ -186,7 +186,7 @@ WITH (
 또는 스크립트 파일 사용:
 
 ```bash
-docker exec -i risingwave psql -h localhost -p 4566 -U root -d dev < risingwave-cdc/setup-pipeline.sql
+docker exec -i risingwave psql -h localhost -p 4566 -U root -d dev < cdc/risingwave/setup-pipeline.sql
 ```
 
 ### 파이프라인 확인

@@ -107,10 +107,27 @@ MySQL에서 StarRocks로의 데이터 동기화(CDC) 데모 환경입니다-TASK
 
 ## **사전 요구사항**
 
+### **소프트웨어 요구사항**
+
 - Docker 20.10 이상
 - Docker Compose v2.0 이상
-- 최소 8GB RAM
-- 최소 20GB 디스크 공간
+- MySQL Client (MySQL/StarRocks 접속용)
+- PostgreSQL Client - psql (RisingWave 사용 시)
+
+### **하드웨어 최소 사양**
+
+| 프로파일 | CPU | RAM | 디스크 | 비고 |
+|----------|-----|-----|--------|------|
+| BE 기본 | 2 cores | 8GB | 20GB | MySQL + StarRocks FE/BE |
+| CN 기본 | 2 cores | 8GB | 20GB | MySQL + StarRocks FE/CN + MinIO |
+| + Flink | +2 cores | +4GB | +5GB | JobManager + TaskManager |
+| + RisingWave | +1 core | +2GB | +5GB | 단일 노드 |
+| + Rill | +1 core | +1GB | +2GB | BI Dashboard + Nginx |
+
+**권장 사양 (전체 기능 사용 시):**
+- CPU: 4 cores 이상
+- RAM: 16GB 이상
+- 디스크: 50GB 이상 (샘플 데이터 포함)
 
 ### **버전 확인**
 
@@ -204,6 +221,24 @@ docker logs -f starrocks-fe
 | Flink Web UI (flink모드) | 8082 | [http://127.0.0.1:8082](http://127.0.0.1:8082/) |
 | MinIO Console (CN모드) | 9001 | [http://127.0.0.1:9001](http://127.0.0.1:9001/) (admin / StarRocksDemo1!_minio) |
 
+### **전체 포트 목록**
+
+| 포트 | 서비스 | 프로토콜 | 프로파일 | 설명 |
+|------|--------|----------|----------|------|
+| 3306 | MySQL | TCP | 기본 | MySQL 데이터베이스 |
+| 8030 | StarRocks FE | HTTP | 기본 | FE Web UI / Stream Load |
+| 9020 | StarRocks FE | TCP | 기본 | FE Edit Log |
+| 9030 | StarRocks FE | TCP | 기본 | FE MySQL Protocol |
+| 8040 | StarRocks BE/CN | HTTP | 기본 | BE/CN Web UI |
+| 9050 | StarRocks BE/CN | TCP | 기본 | BE/CN Heartbeat |
+| 9060 | StarRocks BE/CN | TCP | 기본 | BE/CN BRPC |
+| 9000 | MinIO | HTTP | cn | MinIO API |
+| 9001 | MinIO | HTTP | cn | MinIO Console |
+| 8082 | Flink JobManager | HTTP | flink | Flink Web UI |
+| 4566 | RisingWave | TCP | risingwave | PostgreSQL Protocol |
+| 5691 | RisingWave | HTTP | risingwave | RisingWave Dashboard |
+| 9010 | Rill (via Nginx) | HTTP | rill | Rill BI Dashboard |
+
 ---
 
 ## **Flink CDC 모드 (실시간 동기화)**
@@ -214,7 +249,7 @@ Task 스케줄링 대신 Flink CDC를 사용한 실시간 binlog 기반 동기�
 docker compose --profile be --profile flink up -d --build
 ```
 
-자세한 사용법은 [howto/CDC_Flink.md](howto/CDC_Flink.md)를 참조하세요.
+자세한 사용법은 [docs/CDC_Flink.md](docs/CDC_Flink.md)를 참조하세요.
 
 ---
 
@@ -237,7 +272,34 @@ docker compose --profile cn --profile risingwave up -d
 | RisingWave SQL | 4566 | `psql -h 127.0.0.1 -p 4566 -U root -d dev` |
 | RisingWave Dashboard | 5691 | http://localhost:5691 |
 
-자세한 사용법은 [howto/CDC_RisingWave.md](howto/CDC_RisingWave.md)를 참조하세요.
+자세한 사용법은 [docs/CDC_RisingWave.md](docs/CDC_RisingWave.md)를 참조하세요.
+
+---
+
+## **Rill BI 대시보드 (데이터 시각화)**
+
+StarRocks 데이터를 시각화하는 Rill BI 대시보드를 지원합니다.
+
+```bash
+# BE 모드 + Rill
+docker compose --profile be --profile rill up -d
+
+# CN 모드 + Rill
+docker compose --profile cn --profile rill up -d
+```
+
+### Rill 접속 정보
+
+| 서비스 | 포트 | 접속 방법 |
+|--------|------|----------|
+| Rill Dashboard | 9010 | http://localhost:9010 |
+
+**특징:**
+- YAML 기반 선언적 대시보드 구성
+- NYC Yellow Taxi 샘플 데이터 포함
+- 네트워크 격리 아키텍처 (Rill은 StarRocks만 접근 가능)
+
+자세한 사용법은 [docs/Dashboard_Rill.md](docs/Dashboard_Rill.md)를 참조하세요.
 
 ---
 
@@ -253,7 +315,7 @@ StarRocks의 External Catalog와 주기적 Task를 사용한 데이터 동기화
 - Primary Key 테이블로 UPSERT 동작 지원
 - 설정된 주기(예: 5분)마다 변경 데이터 동기화
 
-자세한 사용법은 [howto/Syncdata_MySQL.md](howto/Syncdata_MySQL.md)를 참조하세요.
+자세한 사용법은 [docs/Syncdata_MySQL.md](docs/Syncdata_MySQL.md)를 참조하세요.
 
 ### **Flink CDC 방식 (실시간)**
 
@@ -263,7 +325,7 @@ Apache Flink CDC를 사용한 실시간 binlog 기반 동기화입니다.
 - 스키마 변경 자동 전파 (CDC 3.0+)
 - Flink 클러스터 필요
 
-자세한 사용법은 [howto/CDC_Flink.md](howto/CDC_Flink.md)를 참조하세요.
+자세한 사용법은 [docs/CDC_Flink.md](docs/CDC_Flink.md)를 참조하세요.
 
 ### **RisingWave 방식 (스트리밍 DB)**
 
@@ -274,7 +336,7 @@ RisingWave 스트리밍 데이터베이스를 사용한 실시간 binlog 기반 
 - 단일 노드로 경량 배포 가능
 - Web Dashboard로 직관적인 모니터링
 
-자세한 사용법은 [howto/CDC_RisingWave.md](howto/CDC_RisingWave.md)를 참조하세요.
+자세한 사용법은 [docs/CDC_RisingWave.md](docs/CDC_RisingWave.md)를 참조하세요.
 
 ---
 
@@ -400,32 +462,49 @@ docker compose --profile be --profile cn down -v --rmi all
 starrocks_demo/
 ├── docker-compose.yml          # Docker Compose 설정
 ├── README.md                   # 이 문서
-├── demo.sql                    # 원본 데모 SQL (참고용)
-├── config/
+├── CLAUDE.md                   # Claude Code 가이드
+│
+├── cdc/                        # CDC 파이프라인
+│   ├── flink/                  # Flink CDC (flink 프로파일)
+│   │   ├── Dockerfile
+│   │   └── pipelines/
+│   │       └── mysql-to-starrocks.yaml
+│   └── risingwave/             # RisingWave CDC (risingwave 프로파일)
+│       └── setup-pipeline.sql
+│
+├── bi/                         # BI 도구
+│   └── rill-project/           # Rill BI 대시보드 (rill 프로파일)
+│       ├── rill.yaml
+│       ├── connectors/
+│       ├── metrics/
+│       └── dashboards/
+│
+├── config/                     # 서비스 설정 파일
 │   ├── mysql/
-│   │   └── my.cnf              # MySQL 설정 (binlog 활성화)
 │   ├── fe/
-│   │   └── fe.conf             # StarRocks FE 설정
 │   ├── be/
-│   │   └── be.conf             # StarRocks BE 설정
-│   └── cn/
-│       └── cn.conf             # StarRocks CN 설정
-├── flink-cdc/                  # Flink CDC 설정 (flink 프로파일)
-│   ├── Dockerfile              # Flink + CDC 커스텀 이미지
-│   └── pipelines/
-│       └── mysql-to-starrocks.yaml  # CDC 파이프라인 설정
-├── risingwave-cdc/             # RisingWave CDC 설정 (risingwave 프로파일)
-│   └── setup-pipeline.sql      # CDC 파이프라인 설정 SQL
-├── howto/                      # 사용 가이드
-│   ├── CDC_Flink.md            # Flink CDC 사용법
-│   ├── CDC_RisingWave.md       # RisingWave CDC 사용법
-│   └── Syncdata_MySQL.md       # Task 스케줄링 사용법
-└── scripts/
-    ├── mysql-init.sql          # MySQL 초기화 스크립트 (products)
-    ├── mysql-orders-init.sql   # MySQL orders 테이블 초기화
-    ├── starrocks-be-init.sql   # BE 모드 StarRocks 초기화
-    ├── starrocks-cn-init.sql   # CN 모드 StarRocks 초기화
-    └── starrocks-risingwave-init.sql  # RisingWave 모드 StarRocks 초기화
+│   ├── cn/
+│   └── nginx/
+│
+├── scripts/                    # 초기화 SQL 스크립트
+│   ├── mysql-init.sql
+│   ├── mysql-orders-init.sql
+│   ├── starrocks-be-init.sql
+│   ├── starrocks-cn-init.sql
+│   ├── starrocks-rill-init.sql
+│   └── starrocks-risingwave-init.sql
+│
+├── data/                       # 샘플 데이터
+│   └── sample/
+│       ├── taxi_zone_lookup.csv
+│       └── yellow_tripdata_2024-01.parquet
+│
+└── docs/                       # 사용 가이드
+    ├── img/
+    ├── CDC_Flink.md
+    ├── CDC_RisingWave.md
+    ├── Dashboard_Rill.md
+    └── Syncdata_MySQL.md
 
 ```
 
