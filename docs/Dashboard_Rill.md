@@ -166,10 +166,10 @@ SELECT COUNT(*) FROM yellow_taxi_trips;
 
 ## 4. Rill 프로젝트 구조
 
-Rill 프로젝트는 `rill-project/` 디렉토리에 위치합니다.
+Rill 프로젝트는 `bi/rill-project/` 디렉토리에 위치합니다.
 
 ```
-rill-project/
+bi/rill-project/
 ├── rill.yaml              # 프로젝트 설정
 ├── .env                   # 환경 변수 (비밀번호 등)
 ├── connectors/
@@ -436,7 +436,7 @@ rows:
 
 ### 6.8 완성된 예제
 
-아래 YAML을 `rill-project/canvas/taxi_overview.yaml`로 저장하세요.
+아래 YAML을 `bi/rill-project/canvas/taxi_overview.yaml`로 저장하세요.
 
 ```yaml
 # canvas/taxi_overview.yaml

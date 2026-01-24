@@ -170,7 +170,7 @@ services:
       minio:
         condition: service_healthy
     volumes:
-      - ./sample_data:/sample_data:ro
+      - ./data/sample:/sample_data:ro
     networks:
       - starrocks-net
     entrypoint: /bin/sh
@@ -199,7 +199,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./scripts:/scripts:ro
-      - ./sample_data:/sample_data:ro
+      - ./data/sample:/sample_data:ro
     networks:
       - starrocks-net
     entrypoint: /bin/bash
@@ -379,7 +379,7 @@ services:
   # ===========================================
   flink-jobmanager:
     build:
-      context: ./flink-cdc
+      context: ./cdc/flink
       dockerfile: Dockerfile
     container_name: flink-jobmanager
     profiles: ["flink"]
@@ -388,7 +388,7 @@ services:
       - "8082:8081"
     command: jobmanager
     volumes:
-      - ./flink-cdc/pipelines:/opt/flink-cdc/pipelines:ro
+      - ./cdc/flink/pipelines:/opt/flink-cdc/pipelines:ro
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
@@ -402,7 +402,7 @@ services:
 
   flink-taskmanager:
     build:
-      context: ./flink-cdc
+      context: ./cdc/flink
       dockerfile: Dockerfile
     container_name: flink-taskmanager
     profiles: ["flink"]
@@ -431,7 +431,7 @@ services:
       - "5691:5691"   # Web Dashboard
     volumes:
       - risingwave_data:/risingwave/state_store
-      - ./risingwave-cdc:/risingwave-cdc:ro
+      - ./cdc/risingwave:/risingwave-cdc:ro
     networks:
       - starrocks-net
     depends_on:
@@ -453,9 +453,12 @@ services:
     hostname: rill
     profiles: ["rill"]
     user: root
+    depends_on:
+      starrocks-init-rill:
+        condition: service_completed_successfully
     volumes:
       - rill_data:/home/rill/.rill
-      - ./rill-project:/home/rill/project:rw
+      - ./bi/rill-project:/home/rill/project:rw
     working_dir: /home/rill/project
     command: ["start", "--no-open"]
     environment:
