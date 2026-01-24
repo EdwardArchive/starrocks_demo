@@ -1,0 +1,10 @@
+type: connector
+
+driver: starrocks
+host: "starrocks-fe"
+port: 9030
+username: "root"
+password: "{{ .env.connector.starrocks.password }}"
+database: "analytics_db"
+ssl: false
+log_queries: true

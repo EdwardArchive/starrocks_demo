@@ -1,0 +1,93 @@
+# Metrics view YAML
+# Reference documentation: https://docs.rilldata.com/reference/project-files/metrics-views
+# NYC Yellow Taxi Trip Data Analysis
+
+version: 1
+type: metrics_view
+
+display_name: NYC Yellow Taxi Trips
+description: NYC Yellow Taxi 운행 데이터 분석 대시보드
+
+database: default_catalog
+database_schema: analytics_db
+model: yellow_taxi_trips
+
+timeseries: tpep_pickup_datetime
+smallest_time_grain: month
+
+dimensions:
+  - name: VendorID
+    display_name: Vendor
+    column: VendorID
+  - name: PULocationID
+    display_name: Pickup Location ID
+    column: PULocationID
+  - name: DOLocationID
+    display_name: Dropoff Location ID
+    column: DOLocationID
+  - name: payment_type
+    display_name: Payment Type
+    column: payment_type
+  - name: RatecodeID
+    display_name: Rate Code
+    column: RatecodeID
+  - name: store_and_fwd_flag
+    display_name: Store and Forward
+    column: store_and_fwd_flag
+
+measures:
+  - name: total_trips
+    display_name: Total Trips
+    expression: COUNT(*)
+    description: Total number of taxi trips
+    format_preset: humanize
+  - name: total_passengers
+    display_name: Total Passengers
+    expression: SUM(passenger_count)
+    description: Total number of passengers
+    format_preset: humanize
+  - name: avg_passengers
+    display_name: Avg Passengers per Trip
+    expression: AVG(passenger_count)
+    description: Average passengers per trip
+    format_preset: humanize
+  - name: total_distance
+    display_name: Total Distance (miles)
+    expression: SUM(trip_distance)
+    description: Total trip distance in miles
+    format_preset: humanize
+  - name: avg_distance
+    display_name: Avg Distance (miles)
+    expression: AVG(trip_distance)
+    description: Average trip distance in miles
+    format_preset: humanize
+  - name: total_fare
+    display_name: Total Fare
+    expression: SUM(fare_amount)
+    description: Total fare amount
+    format_preset: currency_usd
+  - name: avg_fare
+    display_name: Avg Fare
+    expression: AVG(fare_amount)
+    description: Average fare amount
+    format_preset: currency_usd
+  - name: total_tips
+    display_name: Total Tips
+    expression: SUM(tip_amount)
+    description: Total tip amount
+    format_preset: currency_usd
+  - name: avg_tip
+    display_name: Avg Tip
+    expression: AVG(tip_amount)
+    description: Average tip amount
+    format_preset: currency_usd
+  - name: total_revenue
+    display_name: Total Revenue
+    expression: SUM(total_amount)
+    description: Total revenue including all charges
+    format_preset: currency_usd
+  - name: avg_revenue
+    display_name: Avg Revenue per Trip
+    expression: AVG(total_amount)
+    description: Average revenue per trip
+    format_preset: currency_usd

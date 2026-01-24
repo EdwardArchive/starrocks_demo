@@ -1,0 +1,6 @@
+compiler: rillv1
+
+title: "StarRocks CDC Demo"
+description: "MySQL to StarRocks CDC 데모 대시보드"
+
+olap_connector: starrocks

@@ -93,8 +93,9 @@ services:
       - fe_log:/opt/starrocks/fe/log
     networks:
       - starrocks-net
+      - rill-isolated-net
     healthcheck:
-      test: 'mysql -u root -h starrocks-fe -P 9030 -e "show frontends\G" |grep "Alive: true"'
+      test: 'mysql -u root -p"starrocks_demo_pw1#" -h starrocks-fe -P 9030 -e "show frontends\G" 2>/dev/null |grep "Alive: true" || mysql -u root -h starrocks-fe -P 9030 -e "show frontends\G" |grep "Alive: true"'
       interval: 10s
       timeout: 5s
       retries: 15
@@ -121,6 +122,7 @@ services:
       - be_log:/opt/starrocks/be/log
     networks:
       - starrocks-net
+      - rill-isolated-net
     command:
       - /bin/bash
       - -c
@@ -130,7 +132,7 @@ services:
         /opt/starrocks/be/bin/start_be.sh
     restart: unless-stopped
     healthcheck:
-      test: 'mysql -u root -h starrocks-fe -P 9030 -e "SHOW BACKENDS\G" |grep "Alive: true"'
+      test: 'mysql -u root -p"starrocks_demo_pw1#" -h starrocks-fe -P 9030 -e "SHOW BACKENDS\G" 2>/dev/null |grep "Alive: true" || mysql -u root -h starrocks-fe -P 9030 -e "SHOW BACKENDS\G" |grep "Alive: true"'
       interval: 10s
       timeout: 5s
       retries: 3
@@ -158,12 +160,93 @@ services:
     restart: "no"
 
   # ===========================================
-  # MinIO (CN 모드 전용 - S3 호환 스토리지)
+  # MinIO Upload (Rill 데모 - 샘플 데이터 업로드)
+  # ===========================================
+  minio-upload-rill:
+    image: minio/mc:latest
+    container_name: minio-upload-rill
+    profiles: ["rill"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./sample_data:/sample_data:ro
+    networks:
+      - starrocks-net
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Uploading sample data to MinIO..."
+        mc alias set myminio http://minio:9000 admin 'StarRocksDemo1!_minio'
+        mc cp /sample_data/yellow_tripdata_2024-01.parquet myminio/sample-data/
+        mc ls myminio/sample-data/
+        echo "Upload complete!"
+    restart: "no"
+
+  # ===========================================
+  # StarRocks Init (Rill 데모 - 테이블 생성 및 데이터 로드)
+  # ===========================================
+  starrocks-init-rill:
+    image: starrocks/fe-ubuntu:3.5-latest
+    container_name: starrocks-init-rill
+    profiles: ["rill"]
+    user: root
+    depends_on:
+      starrocks-be:
+        condition: service_healthy
+      minio-upload-rill:
+        condition: service_completed_successfully
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./sample_data:/sample_data:ro
+    networks:
+      - starrocks-net
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Creating tables..."
+        mysql -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' < /scripts/starrocks-rill-init.sql
+
+        echo ""
+        echo "Loading taxi zone lookup data via Stream Load..."
+        curl --location-trusted -X PUT \
+          -H "Expect:100-continue" \
+          -H "label:taxi_zone_$(date +%s)" \
+          -H "column_separator:," \
+          -H "skip_header:1" \
+          -T /sample_data/taxi_zone_lookup.csv \
+          "http://starrocks-fe:8030/api/analytics_db/taxi_zone_lookup/_stream_load" \
+          -u root:'starrocks_demo_pw1#'
+
+        echo ""
+        echo "Loading yellow taxi trips data from MinIO via FILES()..."
+        mysql -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' -e "
+        INSERT INTO analytics_db.yellow_taxi_trips
+        SELECT * FROM FILES(
+            'path' = 's3://sample-data/yellow_tripdata_2024-01.parquet',
+            'format' = 'parquet',
+            'aws.s3.access_key' = 'admin',
+            'aws.s3.secret_key' = 'StarRocksDemo1!_minio',
+            'aws.s3.endpoint' = 'http://minio:9000',
+            'aws.s3.enable_path_style_access' = 'true'
+        );"
+
+        echo ""
+        echo "Verifying data..."
+        mysql -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' -e "SELECT COUNT(*) as zones FROM analytics_db.taxi_zone_lookup; SELECT COUNT(*) as trips FROM analytics_db.yellow_taxi_trips;"
+
+        echo "Rill demo initialization complete!"
+    restart: "no"
+
+  # ===========================================
+  # MinIO (CN 모드 및 Rill 데모용 S3 호환 스토리지)
   # ===========================================
   minio:
     image: minio/minio:latest
     container_name: minio
-    profiles: ["cn"]
+    profiles: ["cn", "rill"]
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -173,7 +256,7 @@ services:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: StarRocksDemo1!_minio
     entrypoint: sh
-    command: '-c "mkdir -p /data/starrocks-bucket && minio server /data --console-address :9001"'
+    command: '-c "mkdir -p /data/starrocks-bucket /data/sample-data && minio server /data --console-address :9001"'
     networks:
       - starrocks-net
     healthcheck:
@@ -217,11 +300,12 @@ services:
       - fe_log_cn:/opt/starrocks/fe/log
     networks:
       - starrocks-net
+      - rill-isolated-net
     depends_on:
       minio:
         condition: service_healthy
     healthcheck:
-      test: 'mysql -u root -h starrocks-fe -P 9030 -e "show frontends\G" |grep "Alive: true"'
+      test: 'mysql -u root -p"starrocks_demo_pw1#" -h starrocks-fe -P 9030 -e "show frontends\G" 2>/dev/null |grep "Alive: true" || mysql -u root -h starrocks-fe -P 9030 -e "show frontends\G" |grep "Alive: true"'
       interval: 10s
       timeout: 5s
       retries: 15
@@ -249,6 +333,7 @@ services:
       - cn_log:/opt/starrocks/cn/log
     networks:
       - starrocks-net
+      - rill-isolated-net
     environment:
       - HOST_TYPE=FQDN
     command:
@@ -262,7 +347,7 @@ services:
         /opt/starrocks/cn/bin/start_cn.sh
     restart: unless-stopped
     healthcheck:
-      test: 'mysql -u root -h starrocks-fe -P 9030 -e "SHOW COMPUTE NODES\G" |grep "Alive: true"'
+      test: 'mysql -u root -p"starrocks_demo_pw1#" -h starrocks-fe -P 9030 -e "SHOW COMPUTE NODES\G" 2>/dev/null |grep "Alive: true" || mysql -u root -h starrocks-fe -P 9030 -e "SHOW COMPUTE NODES\G" |grep "Alive: true"'
       interval: 10s
       timeout: 5s
       retries: 3
@@ -359,9 +444,61 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ===========================================
+  # Rill BI Dashboard (네트워크 격리)
+  # ===========================================
+  rill:
+    image: kjjs1996/rilldata-starrocks-dev:0.79.5
+    container_name: rill
+    hostname: rill
+    profiles: ["rill"]
+    user: root
+    volumes:
+      - rill_data:/home/rill/.rill
+      - ./rill-project:/home/rill/project:rw
+    working_dir: /home/rill/project
+    command: ["start", "--no-open"]
+    environment:
+      - RILL_DATABASE_DSN=starrocks://root:starrocks_demo_pw1%23@starrocks-fe:9030/analytics_db
+    networks:
+      - rill-isolated-net  # 격리 네트워크만 연결
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9009/"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    restart: unless-stopped
+
+  # ===========================================
+  # Nginx Reverse Proxy (Rill 외부 접근용)
+  # ===========================================
+  rill-proxy:
+    image: nginx:alpine
+    container_name: rill-proxy
+    profiles: ["rill"]
+    ports:
+      - "9010:9009"
+    volumes:
+      - ./config/nginx/rill-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - starrocks-net       # 외부 접근용
+      - rill-isolated-net   # Rill 연결용
+    depends_on:
+      - rill
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9009/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 networks:
   starrocks-net:
     driver: bridge
+  rill-isolated-net:
+    driver: bridge
+    internal: true  # 외부 인터넷 차단
 
 volumes:
   mysql_data:
@@ -374,3 +511,4 @@ volumes:
   cn_log:
   minio_data:
   risingwave_data:
+  rill_data:
