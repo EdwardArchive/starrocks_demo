@@ -1,2 +1,6 @@
 .claude/
 CLAUDE.md
+
+# Rill project environment (contains credentials)
+#rill-project/.env
+rill-project/tmp/meta.db

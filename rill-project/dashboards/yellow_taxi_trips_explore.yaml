@@ -1,0 +1,31 @@
+# Explore YAML
+# Reference documentation: https://docs.rilldata.com/reference/project-files/explore-dashboards
+
+type: explore
+
+display_name: "NYC Yellow Taxi Trips dashboard"
+metrics_view: yellow_taxi_trips
+
+dimensions: '*'
+measures: '*'
+defaults:
+  measures:
+    - total_trips
+    - total_passengers
+    - avg_passengers
+    - total_distance
+    - avg_distance
+    - total_fare
+    - avg_fare
+    - total_tips
+    - avg_tip
+    - total_revenue
+    - avg_revenue
+  dimensions:
+    - VendorID
+    - PULocationID
+    - DOLocationID
+    - payment_type
+    - RatecodeID
+    - store_and_fwd_flag
+  time_range: P3M
