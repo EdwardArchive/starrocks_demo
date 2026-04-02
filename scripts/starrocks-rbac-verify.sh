@@ -107,13 +107,13 @@ run_query "bob_senior" "SELECT COUNT(*) AS cnt FROM mysql_catalog.demo_db.produc
 
 echo ""
 echo -e "  ${CYAN}── 현재 기본 역할(analytics_team)에서 MV 생성 시도 ──${NC}"
-run_query "bob_senior" "CREATE MATERIALIZED VIEW analytics_db.mv_test AS SELECT category, COUNT(*) AS cnt FROM analytics_db.products_sync GROUP BY category;" \
+run_query "bob_senior" "CREATE MATERIALIZED VIEW analytics_db.mv_test REFRESH ASYNC AS SELECT category, COUNT(*) AS cnt FROM analytics_db.products_sync GROUP BY category;" \
     "CREATE MV (기본 역할 - should be denied)" "no"
 
 echo ""
 echo -e "  ${CYAN}── SET ROLE senior_analyst 로 역할 전환 후 MV 생성 시도 ──${NC}"
 echo -e "  ${CYAN}  (참고: SET ROLE은 세션 단위이므로, 단일 쿼리에서 시연)${NC}"
-run_query "bob_senior" "SET ROLE senior_analyst; CREATE MATERIALIZED VIEW IF NOT EXISTS analytics_db.mv_category_stats AS SELECT category, COUNT(*) AS cnt FROM analytics_db.products_sync GROUP BY category;" \
+run_query "bob_senior" "SET ROLE senior_analyst; CREATE MATERIALIZED VIEW IF NOT EXISTS analytics_db.mv_category_stats REFRESH ASYNC AS SELECT category, COUNT(*) AS cnt FROM analytics_db.products_sync GROUP BY category;" \
     "CREATE MV (senior_analyst 역할 전환 후)" "yes"
 
 # 정리
@@ -192,7 +192,7 @@ run_query "jenny_lead" "SELECT COUNT(*) AS cnt FROM analytics_db.products_sync;"
     "SELECT on analytics_db" "yes"
 run_query "jenny_lead" "SELECT COUNT(*) AS cnt FROM mysql_catalog.demo_db.products;" \
     "SELECT on mysql_catalog" "yes"
-run_query "jenny_lead" "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics_db.mv_jenny_test AS SELECT category, COUNT(*) AS cnt FROM analytics_db.products_sync GROUP BY category;" \
+run_query "jenny_lead" "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics_db.mv_jenny_test REFRESH ASYNC AS SELECT category, COUNT(*) AS cnt FROM analytics_db.products_sync GROUP BY category;" \
     "CREATE MV (mv_creator 상속)" "yes"
 mysql -h "$SR_HOST" -P "$SR_PORT" -u root -p'starrocks_demo_pw1#' -e "DROP MATERIALIZED VIEW IF EXISTS analytics_db.mv_jenny_test;" 2>/dev/null
 run_query "jenny_lead" "CREATE TABLE analytics_db.test_table (id INT) DISTRIBUTED BY HASH(id) BUCKETS 1;" \

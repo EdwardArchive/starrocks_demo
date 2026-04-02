@@ -25,7 +25,9 @@ GRANT ALTER, DROP ON ALL TABLES IN DATABASE analytics_db TO ROLE base_ddl;
 -- USAGE 권한으로 카탈로그에 접근하고, SELECT로 데이터 조회
 CREATE ROLE IF NOT EXISTS catalog_user;
 GRANT USAGE ON CATALOG mysql_catalog TO ROLE catalog_user;
-GRANT SELECT ON ALL TABLES IN ALL DATABASES IN CATALOG mysql_catalog TO ROLE catalog_user;
+SET CATALOG mysql_catalog;
+GRANT SELECT ON ALL TABLES IN DATABASE demo_db TO ROLE catalog_user;
+SET CATALOG default_catalog;
 
 -- 1-5. mv_creator: Materialized View 생성 권한
 -- 분석가가 자주 사용하는 쿼리를 MV로 만들어 성능 최적화
@@ -180,7 +182,7 @@ GRANT base_writer, catalog_user TO USER ivan_junior;  -- Base 역할 직접 조�
 -- 분석팀
 GRANT analytics_lead TO USER jenny_lead;
 GRANT analytics_team TO USER alice_analyst;
-GRANT senior_analyst TO USER bob_senior;
+GRANT senior_analyst, analytics_team TO USER bob_senior;
 
 -- 외부/제한 사용자
 GRANT report_viewer TO USER kate_intern;
