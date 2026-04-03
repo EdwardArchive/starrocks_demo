@@ -181,6 +181,40 @@ services:
     restart: "no"
 
   # ===========================================
+  # StarRocks RBAC Init (BE 모드 - 역할/사용자 설정)
+  # ===========================================
+  starrocks-rbac-init-be:
+    image: mysql:8.0
+    container_name: starrocks-rbac-init-be
+    profiles: ["be"]
+    depends_on:
+      starrocks-init-be:
+        condition: service_completed_successfully
+    volumes:
+      - ./scripts:/scripts:ro
+    networks:
+      - starrocks-net
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for analytics_db to be ready..."
+        for i in $(seq 1 30); do
+          if mysql -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' -e "USE analytics_db" 2>/dev/null; then
+            echo "analytics_db is ready."
+            break
+          fi
+          echo "Attempt $$i/30: analytics_db not found. Retrying in 5s..."
+          sleep 5
+        done
+
+        echo "Running RBAC initialization..."
+        mysql -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' < /scripts/starrocks-rbac-init.sql && \
+        echo "RBAC initialization completed successfully." || \
+        echo "RBAC initialization failed or already applied."
+    restart: "no"
+
+  # ===========================================
   # MinIO Upload (Rill 데모 - 샘플 데이터 업로드)
   # ===========================================
   minio-upload-rill:
@@ -414,6 +448,40 @@ services:
         mysql -h starrocks-fe -P 9030 -u root -e "SET PASSWORD = PASSWORD('starrocks_demo_pw1#');" && \
         echo "StarRocks password set successfully." || \
         echo "Password may already be set."
+    restart: "no"
+
+  # ===========================================
+  # StarRocks RBAC Init (CN 모드 - 역할/사용자 설정)
+  # ===========================================
+  starrocks-rbac-init-cn:
+    image: mysql:8.0
+    container_name: starrocks-rbac-init-cn
+    profiles: ["cn"]
+    depends_on:
+      starrocks-init-cn:
+        condition: service_completed_successfully
+    volumes:
+      - ./scripts:/scripts:ro
+    networks:
+      - starrocks-net
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for analytics_db to be ready..."
+        for i in $(seq 1 30); do
+          if mysql -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' -e "USE analytics_db" 2>/dev/null; then
+            echo "analytics_db is ready."
+            break
+          fi
+          echo "Attempt $$i/30: analytics_db not found. Retrying in 5s..."
+          sleep 5
+        done
+
+        echo "Running RBAC initialization..."
+        mysql -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' < /scripts/starrocks-rbac-init.sql && \
+        echo "RBAC initialization completed successfully." || \
+        echo "RBAC initialization failed or already applied."
     restart: "no"
 
   # ===========================================
