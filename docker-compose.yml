@@ -127,8 +127,29 @@ services:
       - /bin/bash
       - -c
       - |
-        sleep 15
-        mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -e "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';" || true
+        # 백그라운드에서 BE 등록 (BE 프로세스가 먼저 시작된 후 등록되도록)
+        (
+          sleep 20
+          # 비밀번호 설정 전/후 모두 대응
+          sr_sql() {
+            mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' -e "$$1" 2>/dev/null \
+            || mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -e "$$1" 2>/dev/null
+          }
+          BE_STATUS=$$(sr_sql "SHOW BACKENDS\G")
+          if echo "$$BE_STATUS" | grep -q "starrocks-be"; then
+            if echo "$$BE_STATUS" | grep -q "Alive: true"; then
+              echo "Backend starrocks-be is already registered and alive. Skipping."
+            else
+              echo "Backend starrocks-be is registered but not alive. Re-registering..."
+              sr_sql "ALTER SYSTEM DROP BACKEND 'starrocks-be:9050';"
+              sleep 3
+              sr_sql "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';"
+            fi
+          else
+            echo "Registering backend starrocks-be:9050..."
+            sr_sql "ALTER SYSTEM ADD BACKEND 'starrocks-be:9050';"
+          fi
+        ) &
         /opt/starrocks/be/bin/start_be.sh
     restart: unless-stopped
     healthcheck:
@@ -340,10 +361,31 @@ services:
       - /bin/bash
       - -c
       - |
-        sleep 15
         ulimit -u 65535
         ulimit -n 65535
-        mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';" || true
+        # 백그라운드에서 CN 등록 (CN 프로세스가 먼저 시작된 후 등록되도록)
+        (
+          sleep 20
+          # 비밀번호 설정 전/후 모두 대응
+          sr_sql() {
+            mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -p'starrocks_demo_pw1#' -e "$$1" 2>/dev/null \
+            || mysql --connect-timeout 2 -h starrocks-fe -P 9030 -u root -e "$$1" 2>/dev/null
+          }
+          CN_STATUS=$$(sr_sql "SHOW COMPUTE NODES\G")
+          if echo "$$CN_STATUS" | grep -q "starrocks-cn"; then
+            if echo "$$CN_STATUS" | grep -q "Alive: true"; then
+              echo "Compute node starrocks-cn is already registered and alive. Skipping."
+            else
+              echo "Compute node starrocks-cn is registered but not alive. Re-registering..."
+              sr_sql "ALTER SYSTEM DROP COMPUTE NODE 'starrocks-cn:9050';"
+              sleep 3
+              sr_sql "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';"
+            fi
+          else
+            echo "Registering compute node starrocks-cn:9050..."
+            sr_sql "ALTER SYSTEM ADD COMPUTE NODE 'starrocks-cn:9050';"
+          fi
+        ) &
         /opt/starrocks/cn/bin/start_cn.sh
     restart: unless-stopped
     healthcheck:
